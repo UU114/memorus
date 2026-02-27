@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "memx"
+version = "0.1.0"
+description = "MemX: Adaptive Context Engine on top of mem0"
+requires-python = ">=3.9"
+dependencies = [
+    "mem0ai>=1.0.0",
+    "pydantic>=2.0",
+    "click>=8.0",
+]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime>=1.16.0"]
+graph = ["neo4j>=5.0"]
+all = ["memx[onnx]", "memx[graph]"]
+dev = [
+    "ruff>=0.4.0",
+    "mypy>=1.10.0",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+memx = "memx.cli.main:cli"
+
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+packages = ["memx"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

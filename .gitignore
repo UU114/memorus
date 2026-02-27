@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Tools
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# ONNX models
+*.onnx
+
+# Non-memx project files
+mem0/
+bmad/
+doc/
+ace-universal-solution-*.md
+.claude/

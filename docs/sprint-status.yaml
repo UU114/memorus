@@ -1,0 +1,329 @@
+# BMAD Sprint Status
+# Project: MemX
+# Generated: 2026-02-27
+# Last Updated: 2026-02-27
+
+version: "6.0.0"
+project_name: "MemX"
+project_level: 3
+current_sprint: 2
+sprint_plan_path: "docs/sprint-plan-memx-2026-02-27.md"
+
+sprints:
+  - sprint_number: 1
+    start_date: "2026-03-03"
+    end_date: "2026-03-14"
+    capacity_points: 63
+    committed_points: 60
+    completed_points: 60
+    status: "completed"
+    goal: "完成 MemX 项目骨架、数据模型、配置系统、mem0 兼容层、Reflector 知识蒸馏引擎"
+    stories:
+      - story_id: "STORY-006"
+        title: "项目骨架和包结构"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-001"
+        title: "BulletMetadata 模型"
+        points: 3
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-002"
+        title: "BulletFactory"
+        points: 3
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-003"
+        title: "MemXConfig 配置模型"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-004"
+        title: "MemXMemory Decorator"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-005"
+        title: "AsyncMemXMemory"
+        points: 3
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-007"
+        title: "mem0 兼容测试"
+        points: 4
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-008"
+        title: "PatternDetector 基础"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-009"
+        title: "PatternDetector 扩展"
+        points: 4
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-010"
+        title: "KnowledgeScorer"
+        points: 4
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-011"
+        title: "PrivacySanitizer"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-012"
+        title: "BulletDistiller"
+        points: 3
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-013"
+        title: "ReflectorEngine 组装"
+        points: 5
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-015"
+        title: "Sanitizer safety net"
+        points: 2
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+      - story_id: "STORY-014"
+        title: "IngestPipeline"
+        points: 4
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+
+  - sprint_number: 2
+    start_date: "2026-03-17"
+    end_date: "2026-03-28"
+    capacity_points: 63
+    committed_points: 62
+    completed_points: 4
+    status: "in_progress"
+    goal: "完成 Decay + Curator + Generator，实现完整 add→reflect→curate→search→decay 闭环"
+    stories:
+      - story_id: "STORY-020"
+        title: "Decay 核心衰退"
+        points: 4
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-020.md"
+      - story_id: "STORY-021"
+        title: "Decay sweep + reinforce"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-021.md"
+      - story_id: "STORY-022"
+        title: "Decay 测试"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-022.md"
+      - story_id: "STORY-017"
+        title: "Curator 核心去重"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-017.md"
+      - story_id: "STORY-018"
+        title: "MergeStrategy"
+        points: 4
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-018.md"
+      - story_id: "STORY-019"
+        title: "Curator 测试"
+        points: 4
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-019.md"
+      - story_id: "STORY-023"
+        title: "ExactMatcher L1"
+        points: 3
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-023.md"
+      - story_id: "STORY-024"
+        title: "FuzzyMatcher L2"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-024.md"
+      - story_id: "STORY-025"
+        title: "MetadataMatcher L3"
+        points: 3
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-025.md"
+      - story_id: "STORY-026"
+        title: "VectorSearcher L4"
+        points: 3
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-026.md"
+      - story_id: "STORY-027"
+        title: "ScoreMerger"
+        points: 4
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-027.md"
+      - story_id: "STORY-028"
+        title: "GeneratorEngine + 降级"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-028.md"
+      - story_id: "STORY-029"
+        title: "TokenBudgetTrimmer"
+        points: 3
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-029.md"
+      - story_id: "STORY-030"
+        title: "RetrievalPipeline"
+        points: 5
+        status: "defined"
+        assigned_to: null
+        story_doc: "docs/stories/STORY-030.md"
+      - story_id: "STORY-016"
+        title: "Reflector 测试全覆盖"
+        points: 4
+        status: "completed"
+        assigned_to: "Developer"
+        completion_date: "2026-02-27"
+        notes: "391行测试代码，14个测试类，覆盖 ReflectorEngine 全流程"
+
+  - sprint_number: 3
+    start_date: "2026-03-31"
+    end_date: "2026-04-11"
+    capacity_points: 63
+    committed_points: 56
+    completed_points: 0
+    status: "not_started"
+    goal: "完成 Integration + ONNX + Daemon + CLI，MemX 可在 CLI AI 工具中自动运行"
+    stories:
+      - story_id: "STORY-032"
+        title: "IntegrationManager 抽象"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-033"
+        title: "CLI PreInferenceHook"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-034"
+        title: "PostAction + SessionEnd"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-035"
+        title: "Integration 测试"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-036"
+        title: "ONNXEmbedder"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-037"
+        title: "MemXDaemon 服务端"
+        points: 8
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-038"
+        title: "DaemonClient + IPC"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-039"
+        title: "Daemon 降级"
+        points: 3
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-040"
+        title: "Daemon 测试"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-031"
+        title: "Generator 测试全覆盖"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-041"
+        title: "CLI status + search"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-042"
+        title: "CLI learn + list + forget"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+
+  - sprint_number: 4
+    start_date: "2026-04-14"
+    end_date: "2026-04-25"
+    capacity_points: 63
+    committed_points: 22
+    completed_points: 0
+    status: "not_started"
+    goal: "高级功能 + 性能测试 + PyPI 打包发布"
+    stories:
+      - story_id: "STORY-043"
+        title: "层级 Scope 管理"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-044"
+        title: "导入/导出"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-047"
+        title: "冲突检测"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-045"
+        title: "性能基准测试"
+        points: 4
+        status: "not_started"
+        assigned_to: null
+      - story_id: "STORY-046"
+        title: "PyPI 打包发布"
+        points: 5
+        status: "not_started"
+        assigned_to: null
+
+velocity:
+  sprint_1: 60
+  sprint_2: null
+  sprint_3: null
+  sprint_4: null
+  rolling_average: 60
+
+team:
+  size: 4
+  sprint_length_weeks: 2
+  capacity_per_sprint: 63
