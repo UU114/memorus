@@ -316,10 +316,70 @@ class TestNotImplemented:
         result = memory.import_data({"version": "1.0", "memories": []})
         assert result == {"imported": 0, "skipped": 0, "merged": 0}
 
-    def test_run_decay_sweep_not_implemented(self, memory: Memory) -> None:
-        """run_decay_sweep() raises NotImplementedError with STORY reference."""
-        with pytest.raises(NotImplementedError, match="STORY-021"):
-            memory.run_decay_sweep()
+    def test_run_decay_sweep_ace_disabled(self, memory: Memory) -> None:
+        """run_decay_sweep() returns zeros when ACE is disabled."""
+        result = memory.run_decay_sweep()
+        assert result["updated"] == 0
+        assert result["archived"] == 0
+
+    def test_run_decay_sweep_empty_memories(self) -> None:
+        """run_decay_sweep() handles empty memory store."""
+        m = Memory.__new__(Memory)
+        m._config = MemXConfig(ace_enabled=True)
+        m._mem0 = MagicMock()
+        m._mem0.get_all.return_value = {"memories": []}
+        result = m.run_decay_sweep()
+        assert result["updated"] == 0
+        assert result["archived"] == 0
+        assert result["unchanged"] == 0
+
+    def test_run_decay_sweep_with_memories(self) -> None:
+        """run_decay_sweep() computes weights and archives old memories."""
+        from datetime import datetime, timedelta, timezone
+
+        m = Memory.__new__(Memory)
+        m._config = MemXConfig(ace_enabled=True)
+        m._mem0 = MagicMock()
+
+        old_date = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        recent_date = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
+
+        m._mem0.get_all.return_value = {"memories": [
+            {
+                "id": "old-1",
+                "memory": "ancient fact",
+                "metadata": {
+                    "memx_created_at": old_date,
+                    "memx_recall_count": 0,
+                    "memx_decay_weight": 1.0,
+                },
+            },
+            {
+                "id": "recent-1",
+                "memory": "fresh fact",
+                "metadata": {
+                    "memx_created_at": recent_date,
+                    "memx_recall_count": 0,
+                    "memx_decay_weight": 1.0,
+                },
+            },
+            {
+                "id": "permanent-1",
+                "memory": "permanent fact",
+                "metadata": {
+                    "memx_created_at": old_date,
+                    "memx_recall_count": 20,
+                    "memx_decay_weight": 1.0,
+                },
+            },
+        ]}
+        m._mem0.get.return_value = {"id": "x", "memory": "x", "metadata": {}}
+
+        result = m.run_decay_sweep()
+        assert result["permanent"] == 1
+        # old-1 should be archived (365 days old, 0 recalls)
+        assert result["archived"] >= 1
+        assert m._mem0.delete.called
 
 
 # ---------------------------------------------------------------------------

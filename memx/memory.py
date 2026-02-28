@@ -643,9 +643,162 @@ class Memory:
         )
         return {"imported": imported, "skipped": skipped, "merged": merged}
 
-    def run_decay_sweep(self) -> Any:
-        """Run a temporal decay sweep across all memories."""
-        raise NotImplementedError("run_decay_sweep() will be implemented in STORY-021")
+    def run_decay_sweep(
+        self,
+        user_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        archive: bool = True,
+    ) -> dict[str, Any]:
+        """Run a temporal decay sweep across all memories.
+
+        Computes new decay weights for every bullet and persists changes
+        back to the mem0 backend.  Bullets that fall below the archive
+        threshold are optionally deleted.
+
+        Args:
+            user_id:  Scope the sweep to a specific user.
+            agent_id: Scope the sweep to a specific agent.
+            archive:  If True (default), delete bullets below archive threshold.
+
+        Returns:
+            Summary dict with ``updated``, ``archived``, ``permanent``,
+            ``unchanged``, and ``errors`` counts.
+        """
+        from memx.engines.decay.engine import BulletDecayInfo, DecayEngine
+
+        if not self._config.ace_enabled:
+            logger.debug("run_decay_sweep: ACE disabled, nothing to do")
+            return {"updated": 0, "archived": 0, "permanent": 0, "unchanged": 0, "errors": []}
+
+        mem0 = self._ensure_mem0()
+        decay_engine = DecayEngine(config=self._config.decay)
+
+        # Step 1: Load all memories
+        kwargs: dict[str, Any] = {}
+        if user_id:
+            kwargs["user_id"] = user_id
+        if agent_id:
+            kwargs["agent_id"] = agent_id
+
+        raw = mem0.get_all(**kwargs)
+        memories = raw.get("memories", []) if isinstance(raw, dict) else []
+        logger.debug("run_decay_sweep: loaded %d memories", len(memories))
+
+        if not memories:
+            return {"updated": 0, "archived": 0, "permanent": 0, "unchanged": 0, "errors": []}
+
+        # Step 2: Build BulletDecayInfo list
+        bullets: list[BulletDecayInfo] = []
+        for mem in memories:
+            if not isinstance(mem, dict):
+                continue
+            meta = mem.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+
+            created_str = meta.get("memx_created_at")
+            if created_str and isinstance(created_str, str):
+                try:
+                    created_at = datetime.fromisoformat(created_str)
+                except ValueError:
+                    created_at = datetime.now(timezone.utc)
+            else:
+                created_at = datetime.now(timezone.utc)
+
+            recall_count = meta.get("memx_recall_count", 0)
+            if not isinstance(recall_count, int):
+                try:
+                    recall_count = int(recall_count)
+                except (TypeError, ValueError):
+                    recall_count = 0
+
+            current_weight = meta.get("memx_decay_weight", 1.0)
+            if not isinstance(current_weight, (int, float)):
+                try:
+                    current_weight = float(current_weight)
+                except (TypeError, ValueError):
+                    current_weight = 1.0
+
+            last_recall_str = meta.get("memx_last_recall")
+            last_recall = None
+            if last_recall_str and isinstance(last_recall_str, str):
+                try:
+                    last_recall = datetime.fromisoformat(last_recall_str)
+                except ValueError:
+                    pass
+
+            bullets.append(BulletDecayInfo(
+                bullet_id=mem.get("id", ""),
+                created_at=created_at,
+                recall_count=recall_count,
+                last_recall=last_recall,
+                current_weight=current_weight,
+            ))
+
+        # Step 3: Run decay sweep
+        sweep_result = decay_engine.sweep(bullets)
+        logger.debug(
+            "run_decay_sweep: sweep done — updated=%d archived=%d permanent=%d unchanged=%d",
+            sweep_result.updated, sweep_result.archived,
+            sweep_result.permanent, sweep_result.unchanged,
+        )
+
+        # Step 4: Persist weight changes and archive
+        errors: list[str] = list(sweep_result.errors)
+        actual_archived = 0
+        actual_updated = 0
+
+        for bullet_id, decay_result in sweep_result.details.items():
+            if not bullet_id:
+                continue
+
+            # Find the original memory to compare
+            original = next(
+                (b for b in bullets if b.bullet_id == bullet_id), None,
+            )
+            if original is None:
+                continue
+
+            # Archive (delete) if below threshold
+            if archive and decay_result.should_archive:
+                try:
+                    mem0.delete(bullet_id)
+                    actual_archived += 1
+                    logger.debug("run_decay_sweep: archived (deleted) %s", bullet_id)
+                except Exception as e:
+                    errors.append(f"archive {bullet_id}: {e}")
+                continue
+
+            # Update weight if changed
+            if abs(decay_result.weight - original.current_weight) > 0.0001:
+                try:
+                    # mem0 update() takes (memory_id, data_str) — we update
+                    # the metadata via the underlying mem0 API
+                    mem0_mem = mem0.get(bullet_id)
+                    if isinstance(mem0_mem, dict):
+                        existing_meta = mem0_mem.get("metadata", {})
+                        if isinstance(existing_meta, dict):
+                            existing_meta["memx_decay_weight"] = round(decay_result.weight, 6)
+                            # Persist: re-add with updated metadata
+                            content = mem0_mem.get("memory", "")
+                            mem0.update(bullet_id, content)
+                    actual_updated += 1
+                    logger.debug(
+                        "run_decay_sweep: updated %s weight %.4f -> %.4f",
+                        bullet_id, original.current_weight, decay_result.weight,
+                    )
+                except Exception as e:
+                    errors.append(f"update {bullet_id}: {e}")
+
+        summary = {
+            "updated": actual_updated,
+            "archived": actual_archived,
+            "permanent": sweep_result.permanent,
+            "unchanged": sweep_result.unchanged,
+            "errors": errors,
+        }
+        logger.info("run_decay_sweep complete: %s", summary)
+        return summary
 
     # ---- Internal ----------------------------------------------------------
 
