@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memx"
-version = "0.1.2"
+version = "0.1.3"
 description = "Intelligent memory engine for AI agents — mem0 fork with ACE layer"
 readme = "README.md"
 license = "Apache-2.0"

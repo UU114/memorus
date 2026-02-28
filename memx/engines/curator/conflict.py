@@ -4,6 +4,7 @@ Scans pairs of existing memories for potential contradictions by checking:
 1. Text similarity in a configurable [min, max] range (likely same topic)
 2. Negation asymmetry (one affirms, the other negates)
 3. Opposing keyword pairs (always/never, enable/disable, etc.)
+4. Version conflicts (same tool/library but different version references)
 
 Grouped by section for performance on large datasets.
 """
@@ -11,6 +12,7 @@ Grouped by section for performance on large datasets.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from itertools import combinations
@@ -84,6 +86,24 @@ class ConflictDetector:
         ("allow", "deny"),
         ("open", "close"),
     ]
+
+    # Patterns that capture (tool_or_lib, version_string) from text.
+    # Order matters: more specific patterns first.
+    VERSION_PATTERNS: list[re.Pattern[str]] = [
+        # "react@18.2.0", "lodash@4", "express@5.0"
+        re.compile(r"([a-zA-Z][\w.-]*)@(\d+(?:\.\d+){0,2}(?:-[\w.]+)?)"),
+        # "react 18.2.0", "python 3.11", "node 20.x"
+        re.compile(r"([a-zA-Z][\w.-]*)\s+(v?\d+(?:\.\d+){0,2}(?:-[\w.]+)?(?:\.x)?)"),
+        # "react v18", "vue v3.4"
+        re.compile(r"([a-zA-Z][\w.-]*)\s+v(\d+(?:\.\d+){0,2}(?:-[\w.]+)?)"),
+    ]
+
+    # Words that are NOT tool/library names (avoid false positives).
+    _VERSION_STOPWORDS: set[str] = {
+        "version", "v", "step", "part", "chapter", "section", "level",
+        "tier", "phase", "stage", "day", "year", "http", "port",
+        "error", "code", "status", "line", "page", "item", "rule",
+    }
 
     def __init__(self, config: CuratorConfig | None = None) -> None:
         if config is not None:
@@ -184,6 +204,7 @@ class ConflictDetector:
         Checks performed:
         1. Opposing keyword pairs (e.g. one says "always", the other "never")
         2. Negation asymmetry (one contains negation words, the other does not)
+        3. Version conflict (same tool/library but different version numbers)
         """
         tokens_a = set(text_a.lower().split())
         tokens_b = set(text_b.lower().split())
@@ -209,6 +230,51 @@ class ConflictDetector:
 
         if neg_a != neg_b:
             return "negation_asymmetry"
+
+        # Check 3: Version conflict
+        version_reason = self._check_version_conflict(text_a, text_b)
+        if version_reason is not None:
+            return version_reason
+
+        return None
+
+    def _extract_versions(self, text: str) -> dict[str, str]:
+        """Extract {tool_name: version} pairs from text.
+
+        Applies all VERSION_PATTERNS and returns the first version found
+        per tool name (lowercased). Filters out stopwords.
+        """
+        results: dict[str, str] = {}
+        for pattern in self.VERSION_PATTERNS:
+            for match in pattern.finditer(text):
+                tool = match.group(1).lower().rstrip(".")
+                ver = match.group(2).lstrip("v")
+                if tool in self._VERSION_STOPWORDS or len(tool) < 2:
+                    continue
+                if tool not in results:
+                    results[tool] = ver
+        return results
+
+    def _check_version_conflict(self, text_a: str, text_b: str) -> str | None:
+        """Detect version conflict: same tool referenced with different versions.
+
+        Returns a reason string like 'version_conflict: react 17.0 vs 18.2'
+        or None if no version conflict is found.
+        """
+        versions_a = self._extract_versions(text_a)
+        versions_b = self._extract_versions(text_b)
+
+        if not versions_a or not versions_b:
+            return None
+
+        for tool, ver_a in versions_a.items():
+            ver_b = versions_b.get(tool)
+            if ver_b is not None and ver_a != ver_b:
+                logger.debug(
+                    "ConflictDetector._check_version: %s %s vs %s",
+                    tool, ver_a, ver_b,
+                )
+                return f"version_conflict: {tool} {ver_a} vs {ver_b}"
 
         return None
 

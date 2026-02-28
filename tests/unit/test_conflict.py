@@ -341,6 +341,112 @@ class TestCuratorEngineIntegration:
         assert result.conflicts == []
 
 
+# -- ConflictDetector: version conflict detection ------------------------------
+
+
+class TestVersionConflict:
+    """Version conflict: same tool/library but different version numbers."""
+
+    def _wide_config(self) -> CuratorConfig:
+        return CuratorConfig(
+            conflict_min_similarity=0.2, conflict_max_similarity=0.95
+        )
+
+    def test_semver_at_syntax(self) -> None:
+        """react@17.0.2 vs react@18.2.0 -> version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "install react@17.0.2 for the legacy project components")
+        b = _bullet("b", "install react@18.2.0 for the legacy project components")
+        result = detector.detect([a, b])
+        assert len(result.conflicts) == 1
+        assert "version_conflict" in result.conflicts[0].reason
+        assert "react" in result.conflicts[0].reason
+
+    def test_version_with_space(self) -> None:
+        """python 3.9 vs python 3.12 -> version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "use python 3.9 for building the data pipeline")
+        b = _bullet("b", "use python 3.12 for building the data pipeline")
+        result = detector.detect([a, b])
+        assert len(result.conflicts) >= 1
+        reasons = [c.reason for c in result.conflicts]
+        assert any("version_conflict" in r for r in reasons)
+
+    def test_v_prefix(self) -> None:
+        """node v18 vs node v20 -> version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "run the tests on node v18 runtime environment")
+        b = _bullet("b", "run the tests on node v20 runtime environment")
+        result = detector.detect([a, b])
+        assert len(result.conflicts) >= 1
+        reasons = [c.reason for c in result.conflicts]
+        assert any("version_conflict" in r for r in reasons)
+
+    def test_same_version_no_conflict(self) -> None:
+        """Same tool + same version -> no version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "install react@18.2.0 for the project components setup")
+        b = _bullet("b", "install react@18.2.0 for the project components config")
+        result = detector.detect([a, b])
+        # No version conflict (may still detect other types)
+        version_conflicts = [c for c in result.conflicts if "version_conflict" in c.reason]
+        assert len(version_conflicts) == 0
+
+    def test_different_tools_no_conflict(self) -> None:
+        """Different tools with different versions -> no version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "install react@18.2.0 for frontend component rendering")
+        b = _bullet("b", "install express@5.0.0 for backend server component routing")
+        result = detector.detect([a, b])
+        version_conflicts = [c for c in result.conflicts if "version_conflict" in c.reason]
+        assert len(version_conflicts) == 0
+
+    def test_no_version_in_text(self) -> None:
+        """No version numbers at all -> no version conflict."""
+        detector = ConflictDetector(self._wide_config())
+        a = _bullet("a", "use react hooks for the state management in components")
+        b = _bullet("b", "use react classes for the state management in components")
+        result = detector.detect([a, b])
+        version_conflicts = [c for c in result.conflicts if "version_conflict" in c.reason]
+        assert len(version_conflicts) == 0
+
+
+class TestVersionExtraction:
+    """Unit tests for the _extract_versions helper."""
+
+    def test_at_syntax(self) -> None:
+        d = ConflictDetector()
+        assert d._extract_versions("lodash@4.17.21") == {"lodash": "4.17.21"}
+
+    def test_space_syntax(self) -> None:
+        d = ConflictDetector()
+        assert d._extract_versions("python 3.11 is great") == {"python": "3.11"}
+
+    def test_v_prefix_syntax(self) -> None:
+        d = ConflictDetector()
+        assert d._extract_versions("use vue v3.4 for SPA") == {"vue": "3.4"}
+
+    def test_multiple_tools(self) -> None:
+        d = ConflictDetector()
+        result = d._extract_versions("react@18.2 and express@5.0.1")
+        assert result["react"] == "18.2"
+        assert result["express"] == "5.0.1"
+
+    def test_stopwords_filtered(self) -> None:
+        d = ConflictDetector()
+        result = d._extract_versions("version 2.0 and step 3")
+        assert result == {}
+
+    def test_empty_text(self) -> None:
+        d = ConflictDetector()
+        assert d._extract_versions("") == {}
+
+    def test_prerelease_version(self) -> None:
+        d = ConflictDetector()
+        result = d._extract_versions("next@14.3.0-canary.87")
+        assert result["next"] == "14.3.0-canary.87"
+
+
 # -- ConflictDetector: default config ----------------------------------------
 
 
