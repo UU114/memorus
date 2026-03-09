@@ -1,6 +1,6 @@
 """MemX: Adaptive Context Engine on top of mem0."""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # Re-export core API for backward compatibility
 from memx.core.memory import Memory

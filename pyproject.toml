@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "memx"
-version = "1.0.0"
+version = "0.2.1"
 description = "Intelligent memory engine for AI agents — mem0 fork with ACE layer"
 readme = "README.md"
 license = "Apache-2.0"
@@ -35,7 +35,11 @@ onnx = ["onnxruntime>=1.16", "tokenizers>=0.15"]
 graph = ["neo4j>=5.0"]
 llm = ["litellm>=1.40"]
 team = ["httpx>=0.25"]
-all = ["memx[onnx]", "memx[graph]", "memx[llm]", "memx[team]"]
+mcp = ["mcp>=1.0"]
+api = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
+agents = ["openai-agents>=0.1"]
+langchain = ["langchain-core>=0.2"]
+all = ["memx[onnx]", "memx[graph]", "memx[llm]", "memx[team]", "memx[mcp]", "memx[api]"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -48,6 +52,8 @@ dev = [
 
 [project.scripts]
 memx = "memx.core.cli.main:cli"
+memx-mcp = "memx.ext.mcp_server:main"
+memx-api = "memx.ext.rest_api:main"
 
 [project.urls]
 Homepage = "https://github.com/user/memx"
