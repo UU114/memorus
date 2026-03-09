@@ -14,9 +14,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from memx.config import DaemonConfig
-from memx.daemon.client import DaemonClient
-from memx.daemon.ipc import (
+from memx.core.config import DaemonConfig
+from memx.core.daemon.client import DaemonClient
+from memx.core.daemon.ipc import (
     IPCTransport,
     NamedPipeTransport,
     UnixSocketTransport,
@@ -25,8 +25,8 @@ from memx.daemon.ipc import (
     MAX_MESSAGE_SIZE,
     get_transport,
 )
-from memx.daemon.server import DaemonResponse
-from memx.exceptions import DaemonUnavailableError
+from memx.core.daemon.server import DaemonResponse
+from memx.core.exceptions import DaemonUnavailableError
 
 
 # ---------------------------------------------------------------------------
@@ -109,20 +109,20 @@ class TestGetTransport:
     """Tests for the get_transport factory function."""
 
     def test_windows_returns_named_pipe(self) -> None:
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "win32"
             transport = get_transport()
             assert isinstance(transport, NamedPipeTransport)
 
     def test_linux_returns_unix_socket(self) -> None:
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "linux"
             transport = get_transport()
             assert isinstance(transport, UnixSocketTransport)
 
     def test_custom_socket_path_windows(self) -> None:
         config = DaemonConfig(socket_path=r"\\.\pipe\custom-pipe")
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "win32"
             transport = get_transport(config)
             assert isinstance(transport, NamedPipeTransport)
@@ -130,14 +130,14 @@ class TestGetTransport:
 
     def test_custom_socket_path_linux(self) -> None:
         config = DaemonConfig(socket_path="/tmp/custom.sock")
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "linux"
             transport = get_transport(config)
             assert isinstance(transport, UnixSocketTransport)
             assert transport._socket_path == "/tmp/custom.sock"
 
     def test_default_config_used_when_none(self) -> None:
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "win32"
             transport = get_transport(None)
             assert isinstance(transport, NamedPipeTransport)
@@ -263,33 +263,33 @@ class TestPing:
 
     async def test_ping_returns_true_when_daemon_alive(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={"version": "1.0.0"}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             result = await client.ping()
             assert result is True
 
     async def test_ping_returns_false_on_connection_error(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             result = await client.ping()
             assert result is False
 
     async def test_ping_returns_false_on_timeout(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=TimeoutTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=TimeoutTransport()):
             client = DaemonClient(connect_timeout=0.05)
             result = await client.ping()
             assert result is False
 
     async def test_ping_returns_false_on_error_status(self) -> None:
         fake = FakeTransport(DaemonResponse(status="error", error="bad"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             result = await client.ping()
             assert result is False
 
     async def test_is_running_delegates_to_ping(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             result = await client.is_running()
             assert result is True
@@ -306,14 +306,14 @@ class TestRecall:
     async def test_recall_returns_results(self) -> None:
         results = [{"memory": "test bullet", "score": 0.9}]
         fake = FakeTransport(DaemonResponse(status="ok", data={"results": results}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             out = await client.recall("async patterns", user_id="u1")
             assert out == results
 
     async def test_recall_sends_correct_request(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={"results": []}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.recall("test query", user_id="user1", limit=10)
             assert fake.sent_data is not None
@@ -325,21 +325,21 @@ class TestRecall:
 
     async def test_recall_empty_results(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={"results": []}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             out = await client.recall("nothing here")
             assert out == []
 
     async def test_recall_default_user_id(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={"results": []}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.recall("query")
             req = json.loads(fake.sent_data.decode("utf-8"))  # type: ignore[union-attr]
             assert req["data"]["user_id"] == "default"
 
     async def test_recall_raises_on_connection_error(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="unavailable"):
                 await client.recall("test")
@@ -348,14 +348,14 @@ class TestRecall:
         fake = FakeTransport(
             DaemonResponse(status="error", error="Memory not initialized")
         )
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="recall failed"):
                 await client.recall("test")
 
     async def test_recall_missing_results_key(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             out = await client.recall("test")
             assert out == []
@@ -372,14 +372,14 @@ class TestCurate:
     async def test_curate_returns_data(self) -> None:
         result_data = {"results": [], "ace_ingest": {"bullets_added": 1}}
         fake = FakeTransport(DaemonResponse(status="ok", data=result_data))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             out = await client.curate("User prefers dark mode", user_id="u1")
             assert out == result_data
 
     async def test_curate_sends_correct_request(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok", data={}))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.curate(
                 messages=[{"role": "user", "content": "I like cats"}],
@@ -391,7 +391,7 @@ class TestCurate:
             assert req["data"]["user_id"] == "u2"
 
     async def test_curate_raises_on_connection_error(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError):
                 await client.curate("msg", user_id="u1")
@@ -400,7 +400,7 @@ class TestCurate:
         fake = FakeTransport(
             DaemonResponse(status="error", error="Missing 'messages'")
         )
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="curate failed"):
                 await client.curate("test", user_id="u1")
@@ -416,7 +416,7 @@ class TestSessionManagement:
 
     async def test_register_session_success(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.register_session("sess-abc")
             req = json.loads(fake.sent_data.decode("utf-8"))  # type: ignore[union-attr]
@@ -425,7 +425,7 @@ class TestSessionManagement:
 
     async def test_unregister_session_success(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.unregister_session("sess-abc")
             req = json.loads(fake.sent_data.decode("utf-8"))  # type: ignore[union-attr]
@@ -433,13 +433,13 @@ class TestSessionManagement:
             assert req["data"]["session_id"] == "sess-abc"
 
     async def test_register_raises_on_connection_error(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError):
                 await client.register_session("sess-abc")
 
     async def test_unregister_raises_on_connection_error(self) -> None:
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError):
                 await client.unregister_session("sess-abc")
@@ -448,7 +448,7 @@ class TestSessionManagement:
         fake = FakeTransport(
             DaemonResponse(status="error", error="Missing 'session_id'")
         )
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="session_register"):
                 await client.register_session("")
@@ -457,7 +457,7 @@ class TestSessionManagement:
         fake = FakeTransport(
             DaemonResponse(status="error", error="Missing 'session_id'")
         )
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="session_unregister"):
                 await client.unregister_session("")
@@ -473,7 +473,7 @@ class TestShutdown:
 
     async def test_shutdown_success(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.shutdown()
             req = json.loads(fake.sent_data.decode("utf-8"))  # type: ignore[union-attr]
@@ -481,7 +481,7 @@ class TestShutdown:
 
     async def test_shutdown_daemon_already_gone(self) -> None:
         """Shutdown should not raise even if daemon is already gone."""
-        with patch("memx.daemon.client.get_transport", return_value=FailConnectTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=FailConnectTransport()):
             client = DaemonClient()
             await client.shutdown()  # Should not raise
 
@@ -489,7 +489,7 @@ class TestShutdown:
         fake = FakeTransport(
             DaemonResponse(status="error", error="some issue")
         )
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.shutdown()  # Should not raise, just log
 
@@ -504,7 +504,7 @@ class TestTransportLifecycle:
 
     async def test_transport_closed_after_success(self) -> None:
         fake = FakeTransport(DaemonResponse(status="ok"))
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.ping()
             assert fake.closed is True
@@ -516,7 +516,7 @@ class TestTransportLifecycle:
             raise ConnectionError("refused")
 
         fake.connect = failing_connect  # type: ignore[assignment]
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             await client.ping()  # Returns False, should not raise
             assert fake.closed is True
@@ -529,7 +529,7 @@ class TestTransportLifecycle:
             return b"not json at all"
 
         fake.recv = bad_recv  # type: ignore[assignment]
-        with patch("memx.daemon.client.get_transport", return_value=fake):
+        with patch("memx.core.daemon.client.get_transport", return_value=fake):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="Invalid response"):
                 await client.recall("test")
@@ -573,13 +573,13 @@ class TestDaemonUnavailableError:
         assert isinstance(err, ConnectionError)
 
     def test_inherits_from_daemon_error(self) -> None:
-        from memx.exceptions import DaemonError
+        from memx.core.exceptions import DaemonError
 
         err = DaemonUnavailableError("test")
         assert isinstance(err, DaemonError)
 
     def test_inherits_from_memx_error(self) -> None:
-        from memx.exceptions import MemXError
+        from memx.core.exceptions import MemXError
 
         err = DaemonUnavailableError("test")
         assert isinstance(err, MemXError)
@@ -618,7 +618,7 @@ class TestEdgeCases:
             async def close(self) -> None:
                 pass
 
-        with patch("memx.daemon.client.get_transport", return_value=SlowRecvTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=SlowRecvTransport()):
             client = DaemonClient(request_timeout=0.05)
             with pytest.raises(DaemonUnavailableError, match="unavailable"):
                 await client.recall("test")
@@ -639,7 +639,7 @@ class TestEdgeCases:
             async def close(self) -> None:
                 pass
 
-        with patch("memx.daemon.client.get_transport", return_value=OsErrorTransport()):
+        with patch("memx.core.daemon.client.get_transport", return_value=OsErrorTransport()):
             client = DaemonClient()
             with pytest.raises(DaemonUnavailableError, match="unavailable"):
                 await client.register_session("s1")
@@ -666,7 +666,7 @@ class TestEdgeCases:
         def make_transport(_: Any = None) -> CountingTransport:
             return CountingTransport()
 
-        with patch("memx.daemon.client.get_transport", side_effect=make_transport):
+        with patch("memx.core.daemon.client.get_transport", side_effect=make_transport):
             client = DaemonClient()
             tasks = [client.recall("q") for _ in range(5)]
             results = await asyncio.gather(*tasks)

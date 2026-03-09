@@ -27,8 +27,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from memx.config import DaemonConfig, MemXConfig
-from memx.daemon import (
+from memx.core.config import DaemonConfig, MemXConfig
+from memx.core.daemon import (
     DaemonClient,
     DaemonFallbackManager,
     DaemonRequest,
@@ -39,7 +39,7 @@ from memx.daemon import (
     UnixSocketTransport,
     get_transport,
 )
-from memx.daemon.server import (
+from memx.core.daemon.server import (
     DEFAULT_IDLE_TIMEOUT,
     MAX_REQUEST_SIZE,
     PID_PATH,
@@ -47,8 +47,8 @@ from memx.daemon.server import (
     SOCKET_PATH,
     _is_process_alive,
 )
-from memx.exceptions import DaemonError, DaemonUnavailableError
-from memx.memory import Memory
+from memx.core.exceptions import DaemonError, DaemonUnavailableError
+from memx.core.memory import Memory
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@ class TestPIDEdgeCases:
         daemon = _make_daemon()
         with (
             patch.object(type(daemon), "pid_path", new=property(lambda s: pid_path)),
-            patch("memx.daemon.server._is_process_alive", return_value=False),
+            patch("memx.core.daemon.server._is_process_alive", return_value=False),
         ):
             daemon._check_pid()
             assert not pid_path.exists()
@@ -484,14 +484,14 @@ class TestPIDEdgeCases:
         """Class-level is_daemon_running handles corrupt PID file."""
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("corrupt_data")
-        with patch("memx.daemon.server.PID_PATH", pid_path):
+        with patch("memx.core.daemon.server.PID_PATH", pid_path):
             assert MemXDaemon.is_daemon_running() is False
 
     def test_read_pid_with_extra_whitespace(self, tmp_path: Path) -> None:
         """Read PID handles leading/trailing whitespace."""
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("  42  \n")
-        with patch("memx.daemon.server.PID_PATH", pid_path):
+        with patch("memx.core.daemon.server.PID_PATH", pid_path):
             assert MemXDaemon.read_pid() == 42
 
 
@@ -619,7 +619,7 @@ class TestConfigPropagation:
     def test_transport_factory_with_custom_config(self) -> None:
         """get_transport passes socket_path from config to the transport."""
         config = DaemonConfig(socket_path="/tmp/custom.sock")
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "linux"
             transport = get_transport(config)
             assert isinstance(transport, UnixSocketTransport)
@@ -628,7 +628,7 @@ class TestConfigPropagation:
     def test_transport_factory_windows_custom_pipe(self) -> None:
         """get_transport passes custom pipe name on Windows."""
         config = DaemonConfig(socket_path=r"\\.\pipe\custom")
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "win32"
             transport = get_transport(config)
             assert isinstance(transport, NamedPipeTransport)
@@ -883,7 +883,7 @@ class TestServerLifecycleEdgeCases:
         pid_path.write_text("12345")
         with (
             patch.object(type(daemon), "pid_path", new=property(lambda s: pid_path)),
-            patch("memx.daemon.server._is_process_alive", return_value=True),
+            patch("memx.core.daemon.server._is_process_alive", return_value=True),
         ):
             with pytest.raises(DaemonError, match="already running"):
                 await daemon.start()
@@ -1072,8 +1072,8 @@ class TestDaemonExports:
     """Verify daemon __init__.py exports all expected symbols."""
 
     def test_all_exports_present(self) -> None:
-        """All expected public classes/functions are exported from memx.daemon."""
-        from memx import daemon
+        """All expected public classes/functions are exported from memx.core.daemon."""
+        from memx.core import daemon
 
         expected = [
             "DaemonClient",
@@ -1091,7 +1091,7 @@ class TestDaemonExports:
 
     def test_all_list_matches_exports(self) -> None:
         """__all__ contains exactly the expected public names."""
-        from memx.daemon import __all__
+        from memx.core.daemon import __all__
 
         assert set(__all__) == {
             "DaemonClient",
@@ -1115,7 +1115,7 @@ class TestExceptionHierarchy:
     """Verify exception class relationships."""
 
     def test_daemon_error_is_memx_error(self) -> None:
-        from memx.exceptions import MemXError
+        from memx.core.exceptions import MemXError
 
         assert issubclass(DaemonError, MemXError)
 
@@ -1126,7 +1126,7 @@ class TestExceptionHierarchy:
         assert issubclass(DaemonUnavailableError, ConnectionError)
 
     def test_daemon_unavailable_catchable_as_memx_error(self) -> None:
-        from memx.exceptions import MemXError
+        from memx.core.exceptions import MemXError
 
         with pytest.raises(MemXError):
             raise DaemonUnavailableError("test")
@@ -1148,7 +1148,7 @@ class TestPlatformBranching:
         """On Windows without custom path, returns PIPE_NAME."""
         daemon = _make_daemon()
         daemon._config = DaemonConfig()
-        with patch("memx.daemon.server.sys") as mock_sys:
+        with patch("memx.core.daemon.server.sys") as mock_sys:
             mock_sys.platform = "win32"
             assert daemon.ipc_address == PIPE_NAME
 
@@ -1156,7 +1156,7 @@ class TestPlatformBranching:
         """On Linux without custom path, returns SOCKET_PATH."""
         daemon = _make_daemon()
         daemon._config = DaemonConfig()
-        with patch("memx.daemon.server.sys") as mock_sys:
+        with patch("memx.core.daemon.server.sys") as mock_sys:
             mock_sys.platform = "linux"
             assert daemon.ipc_address == str(SOCKET_PATH)
 
@@ -1167,7 +1167,7 @@ class TestPlatformBranching:
 
     def test_get_transport_darwin(self) -> None:
         """macOS uses UnixSocketTransport."""
-        with patch("memx.daemon.ipc.sys") as mock_sys:
+        with patch("memx.core.daemon.ipc.sys") as mock_sys:
             mock_sys.platform = "darwin"
             transport = get_transport()
             assert isinstance(transport, UnixSocketTransport)
@@ -1504,7 +1504,7 @@ class TestInitDaemonFallbackEdge:
         m._config = MemXConfig(daemon=DaemonConfig(enabled=True))
         m._daemon_fallback = None
         with patch(
-            "memx.daemon.fallback.DaemonFallbackManager",
+            "memx.core.daemon.fallback.DaemonFallbackManager",
             side_effect=ImportError("no module"),
         ):
             m._init_daemon_fallback()
@@ -1515,7 +1515,7 @@ class TestInitDaemonFallbackEdge:
         m._config = MemXConfig(daemon=DaemonConfig(enabled=True))
         m._daemon_fallback = None
         with patch(
-            "memx.daemon.fallback.DaemonFallbackManager",
+            "memx.core.daemon.fallback.DaemonFallbackManager",
             side_effect=RuntimeError("broken"),
         ):
             m._init_daemon_fallback()

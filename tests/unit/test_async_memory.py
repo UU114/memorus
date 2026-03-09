@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from memx.async_memory import AsyncMemory
-from memx.config import MemXConfig
+from memx.core.async_memory import AsyncMemory
+from memx.core.config import MemXConfig
 
 
 # ---------------------------------------------------------------------------

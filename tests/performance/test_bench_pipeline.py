@@ -12,13 +12,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from memx.engines.decay.engine import DecayEngine
-from memx.engines.generator.engine import BulletForSearch, GeneratorEngine
-from memx.engines.reflector.engine import ReflectorEngine
-from memx.pipeline.ingest import IngestPipeline
-from memx.pipeline.retrieval import RetrievalPipeline
-from memx.types import InteractionEvent
-from memx.utils.token_counter import TokenBudgetTrimmer
+from memx.core.engines.decay.engine import DecayEngine
+from memx.core.engines.generator.engine import BulletForSearch, GeneratorEngine
+from memx.core.engines.reflector.engine import ReflectorEngine
+from memx.core.pipeline.ingest import IngestPipeline
+from memx.core.pipeline.retrieval import RetrievalPipeline
+from memx.core.types import InteractionEvent
+from memx.core.utils.token_counter import TokenBudgetTrimmer
 
 
 @pytest.mark.benchmark(group="pipeline")
@@ -116,7 +116,7 @@ def test_ingest_pipeline_with_curator(
     sample_interaction_event: InteractionEvent,
 ) -> None:
     """IngestPipeline.process() with Curator enabled (no existing bullets)."""
-    from memx.engines.curator.engine import CuratorEngine
+    from memx.core.engines.curator.engine import CuratorEngine
 
     reflector = ReflectorEngine()
     curator = CuratorEngine()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from memx.engines.generator.exact_matcher import (
+from memx.core.engines.generator.exact_matcher import (
     ExactMatcher,
     MatchResult,
     tokenize_query,

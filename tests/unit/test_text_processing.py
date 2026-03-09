@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from memx.utils.text_processing import (
+from memx.core.utils.text_processing import (
     extract_tokens,
     stem_english,
     tokenize_chinese,

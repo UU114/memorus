@@ -24,8 +24,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memx.config import IntegrationConfig
-from memx.integration import (
+from memx.core.config import IntegrationConfig
+from memx.core.integration import (
     BaseHook,
     CLIPostActionHook,
     CLIPreInferenceHook,
@@ -38,9 +38,9 @@ from memx.integration import (
     ToolEvent,
     setup_signal_handlers,
 )
-from memx.integration.cli_hooks import _MAX_OUTPUT_LENGTH, _VALID_FORMATS
-from memx.integration.hooks import BaseHook as DirectBaseHook
-from memx.integration.manager import IntegrationManager as DirectManager
+from memx.core.integration.cli_hooks import _MAX_OUTPUT_LENGTH, _VALID_FORMATS
+from memx.core.integration.hooks import BaseHook as DirectBaseHook
+from memx.core.integration.manager import IntegrationManager as DirectManager
 
 
 # ---------------------------------------------------------------------------
@@ -456,7 +456,7 @@ class TestErrorRecovery:
         ok_hook = OKPost()
         mgr.register_hooks([FailPost(), ok_hook])
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             asyncio.run(mgr.fire_post_action(_make_tool_event()))
 
         assert ok_hook.fired is True
@@ -490,7 +490,7 @@ class TestErrorRecovery:
         ok_hook = OKSession()
         mgr.register_hooks([FailSession(), ok_hook])
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             asyncio.run(mgr.fire_session_end("s1"))
 
         assert ok_hook.sessions == ["s1"]
@@ -532,7 +532,7 @@ class TestErrorRecovery:
         ok_post = OKPost()
         mgr.register_hooks([FailPre(), ok_post, FailSession()])
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             # Pre-inference fails -> returns None
             result = asyncio.run(mgr.fire_pre_inference("test"))
             assert result is None
@@ -912,7 +912,7 @@ class TestSessionEndSweepEdgeCases:
         mock_decay = _make_mock_decay_engine(sweep_side_effect=RuntimeError("sweep fail"))
         hook = CLISessionEndHook(mock_mem, mock_decay)
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_session_end("sess"))
 
         # _run_sweep catches exception internally; on_session_end marks completed
@@ -935,7 +935,7 @@ class TestSessionEndSweepEdgeCases:
 
         # Patch _run_sweep to raise directly (bypassing internal try/except)
         with patch.object(hook, "_run_sweep", side_effect=RuntimeError("outer fail")):
-            with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+            with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
                 asyncio.run(hook.on_session_end("sess"))
 
         assert hook._completed is False
@@ -964,7 +964,7 @@ class TestSignalHandlerEdgeCases:
             # The handler uses wait_for with 5s timeout internally,
             # but we cannot actually wait 5s in a test.
             # We patch asyncio.wait_for to raise TimeoutError immediately
-            with patch("memx.integration.cli_hooks.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
+            with patch("memx.core.integration.cli_hooks.asyncio.wait_for", side_effect=asyncio.TimeoutError()):
                 with pytest.raises(SystemExit) as exc_info:
                     handler(signal.SIGINT, None)
                 assert exc_info.value.code == 0
@@ -1106,7 +1106,7 @@ class TestLoggingBehavior:
             async def on_user_input(self, input: str) -> ContextInjection:
                 return ContextInjection()
 
-        with caplog.at_level(logging.INFO, logger="memx.integration.manager"):
+        with caplog.at_level(logging.INFO, logger="memx.core.integration.manager"):
             mgr.register_hooks([SimpleHook()])
         assert "Registered hook: log_test_hook" in caplog.text
 
@@ -1122,7 +1122,7 @@ class TestLoggingBehavior:
                 return ContextInjection()
 
         mgr.register_hooks([SimpleHook(), SimpleHook()])
-        with caplog.at_level(logging.INFO, logger="memx.integration.manager"):
+        with caplog.at_level(logging.INFO, logger="memx.core.integration.manager"):
             mgr.unregister_all()
         assert "Unregistered all hooks (2 removed)" in caplog.text
 
@@ -1141,7 +1141,7 @@ class TestLoggingBehavior:
 
         hook = SimpleHook()
         mgr.register_hooks([hook])
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.manager"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.manager"):
             mgr.register_hooks([hook])
         assert "already registered" in caplog.text
 
@@ -1160,7 +1160,7 @@ class TestLoggingBehavior:
 
         mgr = IntegrationManager()
         mgr.register_hooks([DisabledPre()])
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.manager"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.manager"):
             result = asyncio.run(mgr.fire_pre_inference("test"))
         assert result is None
         assert "disabled_pre disabled" in caplog.text
@@ -1170,7 +1170,7 @@ class TestLoggingBehavior:
     ) -> None:
         config = IntegrationConfig(auto_recall=False)
         mgr = IntegrationManager(config=config)
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.manager"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.manager"):
             result = asyncio.run(mgr.fire_pre_inference("test"))
         assert result is None
         assert "auto_recall disabled" in caplog.text
@@ -1180,7 +1180,7 @@ class TestLoggingBehavior:
     ) -> None:
         config = IntegrationConfig(auto_reflect=False)
         mgr = IntegrationManager(config=config)
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.manager"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.manager"):
             asyncio.run(mgr.fire_post_action(_make_tool_event()))
         assert "auto_reflect disabled" in caplog.text
 
@@ -1189,7 +1189,7 @@ class TestLoggingBehavior:
     ) -> None:
         config = IntegrationConfig(sweep_on_exit=False)
         mgr = IntegrationManager(config=config)
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.manager"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.manager"):
             asyncio.run(mgr.fire_session_end("s"))
         assert "sweep_on_exit disabled" in caplog.text
 
@@ -1199,7 +1199,7 @@ class TestLoggingBehavior:
         mock_mem = _make_mock_memory(get_all_return={"memories": []})
         mock_decay = _make_mock_decay_engine()
         hook = CLISessionEndHook(mock_mem, mock_decay)
-        with caplog.at_level(logging.INFO, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.INFO, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_session_end("sess-log"))
         assert "Session end completed" in caplog.text
 
@@ -1210,6 +1210,6 @@ class TestLoggingBehavior:
         mock_decay = _make_mock_decay_engine()
         hook = CLISessionEndHook(mock_mem, mock_decay)
         asyncio.run(hook.on_session_end("sess"))
-        with caplog.at_level(logging.DEBUG, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_session_end("sess"))
         assert "Session end already completed" in caplog.text

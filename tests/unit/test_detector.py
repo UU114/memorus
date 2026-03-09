@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Optional, Sequence
 
-from memx.engines.reflector.detector import PatternDetector
-from memx.engines.reflector.patterns import (
+from memx.core.engines.reflector.detector import PatternDetector
+from memx.core.engines.reflector.patterns import (
     ConfigChangeRule,
     NewToolRule,
     PatternRule,
     RepetitiveOpRule,
 )
-from memx.types import DetectedPattern, InteractionEvent
+from memx.core.types import DetectedPattern, InteractionEvent
 
 
 # ── Helper factories ───────────────────────────────────────────────────

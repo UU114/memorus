@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memx.config import MemXConfig, PrivacyConfig
-from memx.memory import Memory
-from memx.pipeline.ingest import IngestPipeline
-from memx.privacy.sanitizer import PrivacySanitizer
+from memx.core.config import MemXConfig, PrivacyConfig
+from memx.core.memory import Memory
+from memx.core.pipeline.ingest import IngestPipeline
+from memx.core.privacy.sanitizer import PrivacySanitizer
 
 
 class TestIngestPipelineSanitizerIndependence:

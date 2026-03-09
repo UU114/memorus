@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from memx.config import ReflectorConfig
-from memx.engines.reflector.scorer import KnowledgeScorer
-from memx.types import (
+from memx.core.config import ReflectorConfig
+from memx.core.engines.reflector.scorer import KnowledgeScorer
+from memx.core.types import (
     BulletSection,
     DetectedPattern,
     KnowledgeType,

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from memx.config import CuratorConfig
-from memx.engines.curator.conflict import (
+from memx.core.config import CuratorConfig
+from memx.core.engines.curator.conflict import (
     Conflict,
     ConflictDetector,
     ConflictResult,
 )
-from memx.engines.curator.engine import ExistingBullet
+from memx.core.engines.curator.engine import ExistingBullet
 
 # -- Helper factories -------------------------------------------------------
 
@@ -308,8 +308,8 @@ class TestMultipleMemories:
 class TestCuratorEngineIntegration:
     def test_curate_with_conflict_detection_enabled(self) -> None:
         """CuratorEngine.curate() attaches conflicts when enabled."""
-        from memx.engines.curator.engine import CuratorEngine
-        from memx.types import CandidateBullet
+        from memx.core.engines.curator.engine import CuratorEngine
+        from memx.core.types import CandidateBullet
 
         config = CuratorConfig(
             conflict_detection=True,
@@ -327,8 +327,8 @@ class TestCuratorEngineIntegration:
 
     def test_curate_without_conflict_detection(self) -> None:
         """CuratorEngine.curate() does not run conflict detection by default."""
-        from memx.engines.curator.engine import CuratorEngine
-        from memx.types import CandidateBullet
+        from memx.core.engines.curator.engine import CuratorEngine
+        from memx.core.types import CandidateBullet
 
         config = CuratorConfig(conflict_detection=False)
         engine = CuratorEngine(config)

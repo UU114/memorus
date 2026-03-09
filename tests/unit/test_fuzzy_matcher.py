@@ -6,7 +6,7 @@ import time
 
 import pytest  # noqa: F401 (used by pytest.approx)
 
-from memx.engines.generator.fuzzy_matcher import FuzzyMatcher
+from memx.core.engines.generator.fuzzy_matcher import FuzzyMatcher
 
 # ── Basic matching ─────────────────────────────────────────────────────
 

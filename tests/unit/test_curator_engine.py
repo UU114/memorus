@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import math
 
-from memx.config import CuratorConfig
-from memx.engines.curator.engine import (
+from memx.core.config import CuratorConfig
+from memx.core.engines.curator.engine import (
     CurateResult,
     CuratorEngine,
     ExistingBullet,
     MergeCandidate,
 )
-from memx.types import CandidateBullet
+from memx.core.types import CandidateBullet
 
 # ── Helper factories ─────────────────────────────────────────────────
 

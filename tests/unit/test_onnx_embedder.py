@@ -92,12 +92,12 @@ def empty_model_dir(tmp_path: Path) -> Path:
 
 
 # We need to patch at the module level where the names are used
-_ORT_MODULE = "memx.embeddings.onnx"
+_ORT_MODULE = "memx.core.embeddings.onnx"
 
 
 def _patch_onnx_deps():
     """Return a stack of patches for all ONNX optional dependencies."""
-    import memx.embeddings.onnx as mod
+    import memx.core.embeddings.onnx as mod
 
     patches = [
         patch.object(mod, "_ORT_AVAILABLE", True),
@@ -112,9 +112,9 @@ def _patch_onnx_deps():
 
 def _create_embedder(
     tmp_model_dir: Path, **kwargs: Any
-) -> "memx.embeddings.onnx.ONNXEmbedder":
+) -> "memx.core.embeddings.onnx.ONNXEmbedder":
     """Create an ONNXEmbedder with mocked dependencies."""
-    from memx.embeddings.onnx import ONNXEmbedder
+    from memx.core.embeddings.onnx import ONNXEmbedder
 
     config = BaseEmbedderConfig(
         model="all-MiniLM-L6-v2",
@@ -136,7 +136,7 @@ class TestONNXEmbedderConstruction:
     """Tests for embedder initialization and default config values."""
 
     def test_default_config_values(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         assert embedder.config.model == "all-MiniLM-L6-v2"
@@ -144,7 +144,7 @@ class TestONNXEmbedderConstruction:
         assert embedder._session is None  # Lazy load
 
     def test_custom_config(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         config = BaseEmbedderConfig(model="custom-model", embedding_dims=768)
         embedder = ONNXEmbedder(config=config, model_dir=str(tmp_model_dir))
@@ -152,13 +152,13 @@ class TestONNXEmbedderConstruction:
         assert embedder.config.embedding_dims == 768
 
     def test_dimensions_property(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         assert embedder.dimensions == DIMS
 
     def test_repr(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         r = repr(embedder)
@@ -177,7 +177,7 @@ class TestONNXEmbedderEmbed:
 
     def _setup_embedder(self, tmp_model_dir: Path) -> Any:
         """Create an embedder and manually inject mocked session/tokenizer."""
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         config = BaseEmbedderConfig(model="all-MiniLM-L6-v2", embedding_dims=DIMS)
         embedder = ONNXEmbedder(config=config, model_dir=str(tmp_model_dir))
@@ -243,7 +243,7 @@ class TestONNXEmbedderBatch:
     """Tests for batch embedding."""
 
     def _setup_embedder(self, tmp_model_dir: Path) -> Any:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         config = BaseEmbedderConfig(model="all-MiniLM-L6-v2", embedding_dims=DIMS)
         embedder = ONNXEmbedder(config=config, model_dir=str(tmp_model_dir))
@@ -283,7 +283,7 @@ class TestTokenization:
     """Tests for the internal _tokenize method."""
 
     def test_tokenize_returns_expected_keys(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         embedder._tokenizer = FakeTokenizer()
@@ -293,7 +293,7 @@ class TestTokenization:
         assert "token_type_ids" in result
 
     def test_tokenize_returns_numpy_arrays(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         embedder._tokenizer = FakeTokenizer()
@@ -304,7 +304,7 @@ class TestTokenization:
 
     def test_tokenize_batch_dim(self, tmp_model_dir: Path) -> None:
         """All tensors should have batch dimension of 1."""
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         embedder._tokenizer = FakeTokenizer()
@@ -322,7 +322,7 @@ class TestMeanPooling:
     """Tests for _mean_pooling."""
 
     def test_mean_pooling_shape(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         token_emb = np.random.randn(1, 5, DIMS).astype(np.float32)
@@ -331,7 +331,7 @@ class TestMeanPooling:
         assert result.shape == (DIMS,)
 
     def test_mean_pooling_normalized(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         token_emb = np.random.randn(1, 5, DIMS).astype(np.float32)
@@ -342,7 +342,7 @@ class TestMeanPooling:
 
     def test_mean_pooling_respects_mask(self, tmp_model_dir: Path) -> None:
         """Padding tokens (mask=0) should not affect the result."""
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         # 3 real tokens + 2 padding
@@ -367,7 +367,7 @@ class TestLazyLoading:
 
     def test_ensure_loaded_creates_session(self, tmp_model_dir: Path) -> None:
         """_ensure_loaded should create session and tokenizer."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         # Create mock ort module with required attributes
         mock_ort = MagicMock()
@@ -390,7 +390,7 @@ class TestLazyLoading:
 
     def test_ensure_loaded_is_idempotent(self, tmp_model_dir: Path) -> None:
         """Calling _ensure_loaded twice should not reload."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         mock_ort = MagicMock()
         mock_ort.SessionOptions.return_value = MagicMock()
@@ -421,7 +421,7 @@ class TestModelDownload:
 
     def test_download_called_when_files_missing(self, empty_model_dir: Path) -> None:
         """Should attempt download when model files don't exist."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         mock_ort = MagicMock()
         mock_ort.SessionOptions.return_value = MagicMock()
@@ -454,7 +454,7 @@ class TestModelDownload:
 
     def test_no_download_when_files_exist(self, tmp_model_dir: Path) -> None:
         """Should NOT download when model files already exist."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         mock_ort = MagicMock()
         mock_ort.SessionOptions.return_value = MagicMock()
@@ -477,7 +477,7 @@ class TestModelDownload:
 
     def test_auto_download_disabled_raises(self, empty_model_dir: Path) -> None:
         """Should raise RuntimeError when auto_download=False and files missing."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         with (
             patch.object(mod, "_ORT_AVAILABLE", True),
@@ -490,7 +490,7 @@ class TestModelDownload:
 
     def test_download_failure_raises_runtime_error(self, empty_model_dir: Path) -> None:
         """Failed download should raise RuntimeError with clear message."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         mock_download = MagicMock(side_effect=Exception("Network error"))
 
@@ -515,7 +515,7 @@ class TestCorruptedModelRecovery:
 
     def test_redownload_on_session_load_failure(self, tmp_model_dir: Path) -> None:
         """Should attempt re-download when ONNX session fails to load."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         call_count = 0
         mock_ort = MagicMock()
@@ -566,11 +566,11 @@ class TestDependencyChecking:
     def test_import_memx_embeddings_always_succeeds(self) -> None:
         """Importing the module should never fail, even without onnxruntime."""
         # This test verifies the module-level import is safe
-        import memx.embeddings.onnx  # noqa: F401
+        import memx.core.embeddings.onnx  # noqa: F401
 
     def test_missing_onnxruntime_raises_on_use(self, tmp_model_dir: Path) -> None:
         """Should raise ImportError with helpful message when ort is missing."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         with patch.object(mod, "_ORT_AVAILABLE", False):
             embedder = _create_embedder(tmp_model_dir)
@@ -579,7 +579,7 @@ class TestDependencyChecking:
 
     def test_missing_tokenizers_raises_on_use(self, tmp_model_dir: Path) -> None:
         """Should raise ImportError when tokenizers is missing."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         with (
             patch.object(mod, "_ORT_AVAILABLE", True),
@@ -591,7 +591,7 @@ class TestDependencyChecking:
 
     def test_missing_huggingface_hub_raises_on_use(self, tmp_model_dir: Path) -> None:
         """Should raise ImportError when huggingface_hub is missing."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         with (
             patch.object(mod, "_ORT_AVAILABLE", True),
@@ -604,7 +604,7 @@ class TestDependencyChecking:
 
     def test_missing_multiple_deps_lists_all(self, tmp_model_dir: Path) -> None:
         """ImportError should list all missing dependencies."""
-        import memx.embeddings.onnx as mod
+        import memx.core.embeddings.onnx as mod
 
         with (
             patch.object(mod, "_ORT_AVAILABLE", False),
@@ -625,28 +625,28 @@ class TestFilePathManagement:
     """Tests for model path resolution."""
 
     def test_model_subdir(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         subdir = embedder._model_subdir()
         assert subdir == tmp_model_dir / "all-MiniLM-L6-v2"
 
     def test_resolve_model_path(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         path = embedder._resolve_model_path()
         assert path == tmp_model_dir / "all-MiniLM-L6-v2" / "model.onnx"
 
     def test_resolve_tokenizer_path(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         path = embedder._resolve_tokenizer_path()
         assert path == tmp_model_dir / "all-MiniLM-L6-v2" / "tokenizer.json"
 
     def test_cleanup_model_dir(self, tmp_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(tmp_model_dir))
         subdir = embedder._model_subdir()
@@ -655,7 +655,7 @@ class TestFilePathManagement:
         assert not subdir.exists()
 
     def test_cleanup_nonexistent_dir_is_safe(self, empty_model_dir: Path) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = ONNXEmbedder(model_dir=str(empty_model_dir))
         # Should not raise
@@ -675,20 +675,20 @@ class TestEmbedderFactoryRegistration:
 
     def test_onnx_in_factory_provider_map(self) -> None:
         # Trigger registration by importing the package
-        import memx.embeddings  # noqa: F401
+        import memx.core.embeddings  # noqa: F401
         from mem0.utils.factory import EmbedderFactory
 
         assert "onnx" in EmbedderFactory.provider_to_class
 
     def test_onnx_factory_class_path(self) -> None:
-        import memx.embeddings  # noqa: F401
+        import memx.core.embeddings  # noqa: F401
         from mem0.utils.factory import EmbedderFactory
 
-        assert EmbedderFactory.provider_to_class["onnx"] == "memx.embeddings.onnx.ONNXEmbedder"
+        assert EmbedderFactory.provider_to_class["onnx"] == "memx.core.embeddings.onnx.ONNXEmbedder"
 
     def test_register_is_idempotent(self) -> None:
         """Calling register_onnx_provider multiple times should not error."""
-        from memx.embeddings import register_onnx_provider
+        from memx.core.embeddings import register_onnx_provider
 
         register_onnx_provider()
         register_onnx_provider()  # Second call should be harmless
@@ -699,9 +699,9 @@ class TestEmbedderFactoryRegistration:
 
     def test_factory_create_onnx(self, tmp_model_dir: Path) -> None:
         """Factory.create('onnx', ...) should instantiate ONNXEmbedder."""
-        import memx.embeddings  # noqa: F401
+        import memx.core.embeddings  # noqa: F401
         from mem0.utils.factory import EmbedderFactory
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         embedder = EmbedderFactory.create(
             "onnx",
@@ -721,12 +721,12 @@ class TestEmbeddingBaseInterface:
 
     def test_is_subclass_of_embedding_base(self) -> None:
         from mem0.embeddings.base import EmbeddingBase
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         assert issubclass(ONNXEmbedder, EmbeddingBase)
 
     def test_has_embed_method(self) -> None:
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         assert hasattr(ONNXEmbedder, "embed")
         assert callable(getattr(ONNXEmbedder, "embed"))
@@ -734,7 +734,7 @@ class TestEmbeddingBaseInterface:
     def test_embed_signature_compatible(self) -> None:
         """embed() should accept text and optional memory_action."""
         import inspect
-        from memx.embeddings.onnx import ONNXEmbedder
+        from memx.core.embeddings.onnx import ONNXEmbedder
 
         sig = inspect.signature(ONNXEmbedder.embed)
         params = list(sig.parameters.keys())

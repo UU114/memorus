@@ -23,15 +23,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from memx.config import DaemonConfig, MemXConfig
-from memx.daemon.client import DaemonClient
-from memx.daemon.fallback import (
+from memx.core.config import DaemonConfig, MemXConfig
+from memx.core.daemon.client import DaemonClient
+from memx.core.daemon.fallback import (
     DEFAULT_RECOVERY_COOLDOWN,
     DEFAULT_RECOVERY_INTERVAL,
     DaemonFallbackManager,
 )
-from memx.exceptions import DaemonUnavailableError
-from memx.memory import Memory
+from memx.core.exceptions import DaemonUnavailableError
+from memx.core.memory import Memory
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +136,7 @@ class TestInitialAvailability:
 
     def test_degradation_warning_logged_on_unavailable(self, caplog: Any) -> None:
         mgr = _make_fallback(ping_result=False)
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             mgr.check_initial_availability()
         assert any(
             "Daemon unavailable, falling back to direct mode" in r.message
@@ -145,7 +145,7 @@ class TestInitialAvailability:
 
     def test_no_warning_when_available(self, caplog: Any) -> None:
         mgr = _make_fallback(ping_result=True)
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             mgr.check_initial_availability()
         assert not any(
             "Daemon unavailable" in r.message for r in caplog.records
@@ -264,7 +264,7 @@ class TestDegradationLogging:
         mgr._client.recall = AsyncMock(
             side_effect=DaemonUnavailableError("gone")
         )
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             await mgr.try_recall("q")
         warnings = [
             r for r in caplog.records
@@ -278,7 +278,7 @@ class TestDegradationLogging:
         mgr._client.recall = AsyncMock(
             side_effect=DaemonUnavailableError("gone")
         )
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             await mgr.try_recall("q1")
             # Daemon is now marked unavailable; next calls won't even try IPC
             # But let's force another degradation scenario
@@ -322,7 +322,7 @@ class TestRecovery:
         mgr = _make_fallback(ping_result=True)
         mgr._available = False
         mgr._last_failure_time = 0.0
-        with caplog.at_level(logging.INFO, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.INFO, logger="memx.core.daemon.fallback"):
             await mgr.check_recovery()
         info_msgs = [
             r for r in caplog.records
@@ -451,7 +451,7 @@ class TestDegradationRecoveryCycle:
         mgr._client.recall = AsyncMock(
             side_effect=DaemonUnavailableError("crash")
         )
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             result = await mgr.try_recall("q")
         assert result is None
         assert mgr.is_available is False
@@ -469,7 +469,7 @@ class TestDegradationRecoveryCycle:
         )
 
         # Need enough ticks to trigger recovery (interval=3, we already have 2 ticks)
-        with caplog.at_level(logging.INFO, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.INFO, logger="memx.core.daemon.fallback"):
             result3 = await mgr.try_recall("q3")
 
         # After tick 3, recovery check triggered => daemon back
@@ -670,7 +670,7 @@ class TestLogSpamPrevention:
 
     async def test_repeated_degradation_only_logs_once(self, caplog: Any) -> None:
         mgr = _make_fallback(ping_result=False, recovery_cooldown=9999.0)
-        with caplog.at_level(logging.WARNING, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.daemon.fallback"):
             # First degradation
             mgr._mark_unavailable()
             # Second degradation (simulate another failure after forced available)
@@ -692,7 +692,7 @@ class TestLogSpamPrevention:
         mgr._degraded_logged = True
         mgr._last_failure_time = 0.0
 
-        with caplog.at_level(logging.DEBUG, logger="memx.daemon.fallback"):
+        with caplog.at_level(logging.DEBUG, logger="memx.core.daemon.fallback"):
             # Recovery
             await mgr.check_recovery()
             assert mgr.is_available is True
@@ -767,7 +767,7 @@ class TestEdgeCases:
         m._daemon_fallback = None
 
         with patch(
-            "memx.daemon.fallback.DaemonFallbackManager",
+            "memx.core.daemon.fallback.DaemonFallbackManager",
             side_effect=ImportError("no module"),
         ):
             # Should not raise -- just logs warning
@@ -825,7 +825,7 @@ class TestMemoryInitDaemonFallback:
 
         # Patch the class itself to simulate import/init failure
         with patch(
-            "memx.daemon.fallback.DaemonFallbackManager",
+            "memx.core.daemon.fallback.DaemonFallbackManager",
             side_effect=Exception("init failed"),
         ):
             m._init_daemon_fallback()

@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from memx.engines.generator.vector_searcher import (
+from memx.core.engines.generator.vector_searcher import (
     VectorMatch,
     VectorSearcher,
     _clamp,

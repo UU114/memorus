@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from memx.engines.generator.metadata_matcher import (
+from memx.core.engines.generator.metadata_matcher import (
     MatchResult,
     MetadataInfo,
     MetadataMatcher,

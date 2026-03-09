@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from memx.cli.main import cli
+from memx.core.cli.main import cli
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -100,7 +100,7 @@ def mock_memory() -> MagicMock:
 
 def _patch_create_memory(mock_memory: MagicMock) -> Any:
     """Patch _create_memory to return the mock."""
-    return patch("memx.cli.main._create_memory", return_value=mock_memory)
+    return patch("memx.core.cli.main._create_memory", return_value=mock_memory)
 
 
 # ---------------------------------------------------------------------------
@@ -111,10 +111,10 @@ def _patch_create_memory(mock_memory: MagicMock) -> Any:
 class TestExportJSON:
     """Tests for Memory.export(format='json')."""
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_empty_database(self, mock_init: MagicMock) -> None:
         """Empty database exports with version header and zero memories."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -131,12 +131,12 @@ class TestExportJSON:
         assert result["memories"] == []
         assert "exported_at" in result
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_json_with_memories(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Export includes all memories in the envelope."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -152,12 +152,12 @@ class TestExportJSON:
         assert result["total"] == 3
         assert len(result["memories"]) == 3
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_json_scope_filter(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Export with scope filter only returns matching memories."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -172,12 +172,12 @@ class TestExportJSON:
         assert result["total"] == 1
         assert result["memories"][0]["id"] == "xyz789abc012"
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_json_scope_filter_no_match(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Export with non-matching scope returns empty."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -191,10 +191,10 @@ class TestExportJSON:
         assert isinstance(result, dict)
         assert result["total"] == 0
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_unsupported_format(self, mock_init: MagicMock) -> None:
         """Unsupported format raises ValueError."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -211,10 +211,10 @@ class TestExportJSON:
 class TestExportMarkdown:
     """Tests for Memory.export(format='markdown')."""
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_markdown_header(self, mock_init: MagicMock) -> None:
         """Markdown export starts with the standard header."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -229,12 +229,12 @@ class TestExportMarkdown:
         assert result.startswith("# MemX Knowledge Export")
         assert "Total: 0 memories" in result
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_markdown_groups_by_section(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Markdown export groups memories by section."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -252,12 +252,12 @@ class TestExportMarkdown:
         assert "pytest -v" in result
         assert "`abc123`" in result
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_export_markdown_with_scope(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Markdown export respects scope filter."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -281,10 +281,10 @@ class TestExportMarkdown:
 class TestImportData:
     """Tests for Memory.import_data()."""
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_empty_payload(self, mock_init: MagicMock) -> None:
         """Import with no memories returns zero counts."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -297,10 +297,10 @@ class TestImportData:
         result = mem.import_data({"version": "1.0", "memories": []})
         assert result == {"imported": 0, "skipped": 0, "merged": 0}
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_json_string(self, mock_init: MagicMock) -> None:
         """Import accepts a JSON string."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -321,10 +321,10 @@ class TestImportData:
         assert result["imported"] == 1
         assert result["skipped"] == 0
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_invalid_json_string(self, mock_init: MagicMock) -> None:
         """Import with invalid JSON string raises ValueError."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -337,10 +337,10 @@ class TestImportData:
         with pytest.raises(ValueError, match="Invalid JSON"):
             mem.import_data("{broken json!!", format="json")
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_unsupported_format(self, mock_init: MagicMock) -> None:
         """Import with unsupported format raises ValueError."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -352,10 +352,10 @@ class TestImportData:
         with pytest.raises(ValueError, match="Unsupported import format"):
             mem.import_data({}, format="csv")
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_skips_empty_content(self, mock_init: MagicMock) -> None:
         """Import skips memories with empty content."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -378,10 +378,10 @@ class TestImportData:
         assert result["skipped"] == 2
         assert result["imported"] == 1
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_skips_non_dict_entries(self, mock_init: MagicMock) -> None:
         """Import skips entries that are not dicts."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -399,12 +399,12 @@ class TestImportData:
         assert result["skipped"] == 3
         assert result["imported"] == 0
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_missing_version_treated_as_v1(
         self, mock_init: MagicMock
     ) -> None:
         """Import with missing version field still processes memories."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -421,10 +421,10 @@ class TestImportData:
         result = mem.import_data(data)
         assert result["imported"] == 1
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_handles_add_failure(self, mock_init: MagicMock) -> None:
         """Import counts add failures as skipped."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -443,10 +443,10 @@ class TestImportData:
         assert result["skipped"] == 1
         assert result["imported"] == 0
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_not_a_dict_raises(self, mock_init: MagicMock) -> None:
         """Import with non-dict/non-string data raises ValueError."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -458,10 +458,10 @@ class TestImportData:
         with pytest.raises(ValueError, match="must be a JSON object"):
             mem.import_data(["not", "a", "dict"])  # type: ignore[arg-type]
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_legacy_no_memx_prefix(self, mock_init: MagicMock) -> None:
         """Import handles legacy payloads with no memx_ prefix in metadata."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -493,12 +493,12 @@ class TestImportData:
 class TestRoundTrip:
     """Verify export -> import round-trip preserves data."""
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_json_round_trip(
         self, mock_init: MagicMock, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Exporting then importing JSON preserves memory content."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()
@@ -700,7 +700,7 @@ class TestBulletFactoryExport:
         self, sample_memories: list[dict[str, Any]]
     ) -> None:
         """Reconstruct a full memory with all metadata."""
-        from memx.utils.bullet_factory import BulletFactory
+        from memx.core.utils.bullet_factory import BulletFactory
 
         result = BulletFactory.from_export_payload(sample_memories[0])
         assert result["content"] == "Use pytest -v for verbose output"
@@ -711,7 +711,7 @@ class TestBulletFactoryExport:
 
     def test_from_export_payload_empty(self) -> None:
         """Reconstruct from empty payload uses defaults."""
-        from memx.utils.bullet_factory import BulletFactory
+        from memx.core.utils.bullet_factory import BulletFactory
 
         result = BulletFactory.from_export_payload({})
         assert result["content"] == ""
@@ -721,7 +721,7 @@ class TestBulletFactoryExport:
 
     def test_from_export_payload_legacy_no_prefix(self) -> None:
         """Legacy payload without memx_ prefix gets default metadata."""
-        from memx.utils.bullet_factory import BulletFactory
+        from memx.core.utils.bullet_factory import BulletFactory
 
         payload = {
             "memory": "legacy content",
@@ -741,10 +741,10 @@ class TestBulletFactoryExport:
 class TestLargeImport:
     """Test batch processing for large imports."""
 
-    @patch("memx.memory.Memory.__init__", return_value=None)
+    @patch("memx.core.memory.Memory.__init__", return_value=None)
     def test_import_large_dataset(self, mock_init: MagicMock) -> None:
         """Import > 500 memories processes in batches without error."""
-        from memx.memory import Memory
+        from memx.core.memory import Memory
 
         mem = Memory.__new__(Memory)
         mem._config = MagicMock()

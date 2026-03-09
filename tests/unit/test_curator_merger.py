@@ -7,14 +7,14 @@ from datetime import datetime
 
 import pytest
 
-from memx.engines.curator.engine import ExistingBullet
-from memx.engines.curator.merger import (
+from memx.core.engines.curator.engine import ExistingBullet
+from memx.core.engines.curator.merger import (
     KeepBestStrategy,
     MergeContentStrategy,
     MergeResult,
     get_merge_strategy,
 )
-from memx.types import CandidateBullet
+from memx.core.types import CandidateBullet
 
 
 # ── Helper factories ─────────────────────────────────────────────────
@@ -394,14 +394,14 @@ class TestGetMergeStrategy:
 
 class TestStrategyFromConfig:
     def test_config_default_is_keep_best(self) -> None:
-        from memx.config import CuratorConfig
+        from memx.core.config import CuratorConfig
 
         config = CuratorConfig()
         strategy = get_merge_strategy(config.merge_strategy)
         assert isinstance(strategy, KeepBestStrategy)
 
     def test_config_merge_content(self) -> None:
-        from memx.config import CuratorConfig
+        from memx.core.config import CuratorConfig
 
         config = CuratorConfig(merge_strategy="merge_content")
         strategy = get_merge_strategy(config.merge_strategy)

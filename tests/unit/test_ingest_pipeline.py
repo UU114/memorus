@@ -6,18 +6,18 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from memx.config import ReflectorConfig
-from memx.engines.reflector.engine import ReflectorEngine
-from memx.pipeline.ingest import IngestPipeline, IngestResult
-from memx.privacy.sanitizer import PrivacySanitizer, SanitizeResult
-from memx.types import (
+from memx.core.config import ReflectorConfig
+from memx.core.engines.reflector.engine import ReflectorEngine
+from memx.core.pipeline.ingest import IngestPipeline, IngestResult
+from memx.core.privacy.sanitizer import PrivacySanitizer, SanitizeResult
+from memx.core.types import (
     BulletSection,
     CandidateBullet,
     InteractionEvent,
     KnowledgeType,
     SourceType,
 )
-from memx.utils.bullet_factory import MEMX_PREFIX
+from memx.core.utils.bullet_factory import MEMX_PREFIX
 
 
 # ---------------------------------------------------------------------------
@@ -613,8 +613,8 @@ class TestMemoryAddACEPath:
 
     def test_memory_add_ace_path(self) -> None:
         """ACE enabled + pipeline exists -> returns ace_ingest dict."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)
@@ -641,8 +641,8 @@ class TestMemoryAddACEPath:
 
     def test_memory_add_ace_no_pipeline_falls_back(self) -> None:
         """ACE enabled but pipeline is None -> falls back to proxy."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)

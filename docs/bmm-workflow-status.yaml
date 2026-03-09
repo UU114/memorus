@@ -7,7 +7,7 @@ project_type: "library"
 project_level: 3
 communication_language: "Chinese"
 output_language: "Chinese"
-last_updated: "2026-02-27T00:00:00Z"
+last_updated: "2026-03-08T12:00:00Z"
 
 # Workflow Status Tracking
 # Status values:
@@ -38,8 +38,8 @@ workflow_status:
   # Phase 2: Planning (Required - choose one based on project level)
   - name: prd
     phase: 2
-    status: "docs/prd-memx-2026-02-27.md"
-    description: "Product Requirements Document"
+    status: "docs/prd-memx-2026-03-08.md"
+    description: "Product Requirements Document (v2.0 - Team Memory update)"
 
   - name: tech-spec
     phase: 2
@@ -54,8 +54,8 @@ workflow_status:
   # Phase 3: Solutioning
   - name: architecture
     phase: 3
-    status: "docs/architecture-memx-2026-02-27.md"
-    description: "System architecture design"
+    status: "docs/architecture-memx-2026-03-08.md"
+    description: "System architecture design (v2.0 - Team Memory update)"
 
   - name: solutioning-gate-check
     phase: 3
@@ -65,7 +65,152 @@ workflow_status:
   # Phase 4: Implementation
   - name: sprint-planning
     phase: 4
-    status: "docs/sprint-plan-memx-2026-02-27.md"
-    description: "Sprint planning and story breakdown"
+    status: "docs/sprint-plan-memx-2026-03-08.md"
+    description: "Sprint planning and story breakdown (v2.0 - Team Memory update)"
 
-  # Note: Sprint execution tracked in sprint-status.yaml
+  # Sprint 5 Stories (Phase 4 - Story Development) ✅ ALL COMPLETED
+  # EPIC-009: Core/Team 解耦重构 — 21pts ✅
+  - name: "STORY-048"
+    phase: 4
+    status: "completed"
+    description: "重构 memx/ → memx/core/ 包结构 (5pts, Must) ✅"
+
+  - name: "STORY-049"
+    phase: 4
+    status: "completed"
+    description: "TeamConfig 独立配置模型 (3pts, Must) ✅"
+
+  - name: "STORY-050"
+    phase: 4
+    status: "completed"
+    description: "TeamBullet 数据模型 (3pts, Must) ✅"
+
+  - name: "STORY-051"
+    phase: 4
+    status: "completed"
+    description: "BulletMetadata +schema_version +incompatible_tags (2pts, Must) ✅"
+
+  - name: "STORY-052"
+    phase: 4
+    status: "completed"
+    description: "ext/team_bootstrap.py 条件注入 (5pts, Must) ✅"
+
+  - name: "STORY-053"
+    phase: 4
+    status: "completed"
+    description: "解耦验证测试套件 (3pts, Must) ✅"
+
+  # EPIC-010: Git Fallback 团队记忆 — 25pts ✅
+  - name: "STORY-054"
+    phase: 4
+    status: "completed"
+    description: "GitFallbackStorage JSONL 只读加载 (5pts, Should) ✅"
+
+  - name: "STORY-055"
+    phase: 4
+    status: "completed"
+    description: "Git Fallback 向量缓存 (5pts, Should) ✅"
+
+  - name: "STORY-056"
+    phase: 4
+    status: "completed"
+    description: "MultiPoolRetriever + Shadow Merge (8pts, Should) ✅"
+
+  - name: "STORY-057"
+    phase: 4
+    status: "completed"
+    description: "读时去重 + playbook.cache (3pts, Should) ✅"
+
+  - name: "STORY-058"
+    phase: 4
+    status: "completed"
+    description: "Git Fallback 端到端集成测试 (4pts, Should) ✅"
+
+  # Sprint 5 Summary: 11/11 stories completed, 46/46 points delivered
+  # Pre-existing failures: 22 (score_merger, scope, config, cli version — unrelated to Sprint 5)
+
+  # Sprint 6 Stories (Phase 4 - Story Development) ✅ ALL COMPLETED
+  # EPIC-011: Federation Mode MVP — 39pts ✅
+  - name: "STORY-059"
+    phase: 4
+    status: "completed"
+    description: "TeamCacheStorage (5pts, Should) ✅"
+
+  - name: "STORY-060"
+    phase: 4
+    status: "completed"
+    description: "AceSyncClient 拉取接口 (5pts, Should) ✅"
+
+  - name: "STORY-061"
+    phase: 4
+    status: "completed"
+    description: "Team Cache 同步流程 (5pts, Should) ✅"
+
+  - name: "STORY-062"
+    phase: 4
+    status: "completed"
+    description: "墓碑机制 + Full Sync Check (3pts, Should) ✅"
+
+  - name: "STORY-063"
+    phase: 4
+    status: "completed"
+    description: "Redactor 脱敏引擎 (5pts, Should) ✅"
+
+  - name: "STORY-064"
+    phase: 4
+    status: "completed"
+    description: "Nominator 提名流水线 (5pts, Should) ✅"
+
+  - name: "STORY-065"
+    phase: 4
+    status: "completed"
+    description: "subscribed_tags 订阅过滤 (3pts, Should) ✅"
+
+  - name: "STORY-066"
+    phase: 4
+    status: "completed"
+    description: "Team CLI 命令 (3pts, Should) ✅"
+
+  - name: "STORY-067"
+    phase: 4
+    status: "completed"
+    description: "Federation MVP 端到端集成测试 (5pts, Should) ✅"
+
+  # EPIC-012: Team 治理与高级功能 — 5pts (Sprint 6 portion) ✅
+  - name: "STORY-068"
+    phase: 4
+    status: "completed"
+    description: "AceSyncClient 推送接口 (5pts, Could) ✅"
+
+  # Sprint 6 Summary: 10/10 stories completed, 44/44 points delivered
+  # Test suite: 413 tests passing (unit + integration + performance)
+
+  # Sprint 7 Stories (Phase 4 - Story Development) ✅ ALL COMPLETED
+  # EPIC-012: Team 治理与高级功能 — 21pts ✅
+  - name: "STORY-069"
+    phase: 4
+    status: "completed"
+    description: "三层审核治理逻辑（客户端） (5pts, Could) ✅"
+
+  - name: "STORY-070"
+    phase: 4
+    status: "completed"
+    description: "Supersede 知识纠正流程 (5pts, Could) ✅"
+
+  - name: "STORY-071"
+    phase: 4
+    status: "completed"
+    description: "Tag Taxonomy 标签归一化 (4pts, Could) ✅"
+
+  - name: "STORY-072"
+    phase: 4
+    status: "completed"
+    description: "Mandatory 逃生舱 (3pts, Could) ✅"
+
+  - name: "STORY-073"
+    phase: 4
+    status: "completed"
+    description: "治理集成测试 (4pts, Could) ✅"
+
+  # Sprint 7 Summary: 5/5 stories completed, 21/21 points delivered
+  # Test suite: 186 Sprint 7 tests passing (governance + supersede + taxonomy + mandatory_override + integration)

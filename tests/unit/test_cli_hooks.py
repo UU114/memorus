@@ -15,14 +15,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memx.config import IntegrationConfig
-from memx.integration.cli_hooks import (
+from memx.core.config import IntegrationConfig
+from memx.core.integration.cli_hooks import (
     CLIPostActionHook,
     CLIPreInferenceHook,
     CLISessionEndHook,
     setup_signal_handlers,
 )
-from memx.integration.hooks import (
+from memx.core.integration.hooks import (
     ContextInjection,
     PostActionHook,
     PreInferenceHook,
@@ -172,7 +172,7 @@ class TestOnUserInputExceptions:
     ) -> None:
         mock_mem = _make_mock_memory(search_side_effect=RuntimeError("db down"))
         hook = CLIPreInferenceHook(mock_mem)
-        with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
             result = asyncio.run(hook.on_user_input("test query"))
         assert result.memories == []
         assert result.rendered == ""
@@ -327,7 +327,7 @@ class TestFormatFallback:
 
 class TestWithIntegrationManager:
     def test_manager_can_fire_cli_hook(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         mock_mem = _make_mock_memory(_sample_results(2))
         config = IntegrationConfig()
@@ -340,7 +340,7 @@ class TestWithIntegrationManager:
         assert len(result.memories) == 2
 
     def test_manager_auto_recall_disabled_skips_cli_hook(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         config = IntegrationConfig(auto_recall=False)
         mock_mem = _make_mock_memory(_sample_results(1))
@@ -469,7 +469,7 @@ class TestCLIPostActionHookOnToolResult:
         hook = CLIPostActionHook(mock_mem)
         # Patch _format_tool_event to raise
         with patch.object(hook, "_format_tool_event", side_effect=RuntimeError("fmt error")):
-            with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+            with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
                 asyncio.run(hook.on_tool_result(_make_tool_event()))
         assert "CLIPostActionHook failed to submit distillation" in caplog.text
         hook.shutdown(wait=True)
@@ -479,7 +479,7 @@ class TestCLIPostActionHookOnToolResult:
     ) -> None:
         mock_mem = _make_mock_memory_for_add(add_side_effect=RuntimeError("db error"))
         hook = CLIPostActionHook(mock_mem)
-        with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_tool_result(_make_tool_event()))
             hook.shutdown(wait=True)
         assert "Background distillation failed" in caplog.text
@@ -499,7 +499,7 @@ class TestCLIPostActionHookShutdown:
 
 class TestCLIPostActionHookWithManager:
     def test_manager_fires_post_action_hook(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         mock_mem = _make_mock_memory_for_add()
         config = IntegrationConfig()
@@ -512,7 +512,7 @@ class TestCLIPostActionHookWithManager:
         mock_mem.add.assert_called_once()
 
     def test_manager_auto_reflect_disabled_skips(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         config = IntegrationConfig(auto_reflect=False)
         mock_mem = _make_mock_memory_for_add()
@@ -648,7 +648,7 @@ class TestCLISessionEndHookOnSessionEnd:
         mock_decay = _make_mock_decay_engine()
         hook = CLISessionEndHook(mock_mem, mock_decay)
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_session_end("sess-001"))
 
         assert "Decay sweep failed" in caplog.text or "CLISessionEndHook failed" in caplog.text
@@ -667,7 +667,7 @@ class TestCLISessionEndHookOnSessionEnd:
         mock_decay = _make_mock_decay_engine(sweep_side_effect=RuntimeError("sweep error"))
         hook = CLISessionEndHook(mock_mem, mock_decay)
 
-        with caplog.at_level(logging.WARNING, logger="memx.integration.cli_hooks"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.cli_hooks"):
             asyncio.run(hook.on_session_end("sess-001"))
 
         assert "sweep failed" in caplog.text.lower() or "failed" in caplog.text.lower()
@@ -720,7 +720,7 @@ class TestCLISessionEndHookOnSessionEnd:
 
 class TestCLISessionEndHookWithManager:
     def test_manager_fires_session_end_hook(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         bullets = [
             {
@@ -741,7 +741,7 @@ class TestCLISessionEndHookWithManager:
         mock_decay.sweep.assert_called_once()
 
     def test_manager_sweep_on_exit_disabled_skips(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         config = IntegrationConfig(sweep_on_exit=False)
         mock_mem = _make_mock_memory_for_add()
@@ -762,7 +762,7 @@ class TestCLISessionEndHookWithManager:
 
 class TestSetupSignalHandlers:
     def test_registers_sigint(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         mgr = IntegrationManager()
         old_handler = signal.getsignal(signal.SIGINT)
@@ -776,7 +776,7 @@ class TestSetupSignalHandlers:
             signal.signal(signal.SIGINT, old_handler)
 
     def test_signal_handler_calls_fire_session_end(self) -> None:
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         mgr = IntegrationManager()
         mock_fire = MagicMock()
@@ -800,7 +800,7 @@ class TestSetupSignalHandlers:
 
     def test_repeated_signal_ignored(self) -> None:
         """Second signal during shutdown should be ignored (no double fire)."""
-        from memx.integration.manager import IntegrationManager
+        from memx.core.integration.manager import IntegrationManager
 
         mgr = IntegrationManager()
         call_count = 0

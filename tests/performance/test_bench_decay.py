@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from memx.engines.decay.engine import BulletDecayInfo, DecayEngine
+from memx.core.engines.decay.engine import BulletDecayInfo, DecayEngine
 
 # Threshold in seconds (30 ms).  Doubled to 60 ms as safety margin —
 # see STORY-045 note on adaptive thresholds.

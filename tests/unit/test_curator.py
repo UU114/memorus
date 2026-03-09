@@ -19,14 +19,14 @@ from unittest.mock import patch
 
 import pytest
 
-from memx.config import CuratorConfig
-from memx.engines.curator.engine import (
+from memx.core.config import CuratorConfig
+from memx.core.engines.curator.engine import (
     CurateResult,
     CuratorEngine,
     ExistingBullet,
     MergeCandidate,
 )
-from memx.engines.curator.merger import (
+from memx.core.engines.curator.merger import (
     KeepBestStrategy,
     MergeContentStrategy,
     MergeResult,
@@ -34,7 +34,7 @@ from memx.engines.curator.merger import (
     _union_list,
     get_merge_strategy,
 )
-from memx.types import CandidateBullet
+from memx.core.types import CandidateBullet
 
 # ---------------------------------------------------------------------------
 # Helper factories

@@ -8,7 +8,7 @@ import pytest
 from click.testing import CliRunner
 from unittest.mock import MagicMock, patch
 
-from memx.cli.main import cli
+from memx.core.cli.main import cli
 
 
 # ---------------------------------------------------------------------------
@@ -39,7 +39,7 @@ def mock_memory() -> MagicMock:
 
 def _patch_create_memory(mock_memory: MagicMock):
     """Patch _create_memory to return the mock."""
-    return patch("memx.cli.main._create_memory", return_value=mock_memory)
+    return patch("memx.core.cli.main._create_memory", return_value=mock_memory)
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ class TestStatusCommand:
 
     def test_status_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["status"])
         assert result.exit_code != 0
 
@@ -301,7 +301,7 @@ class TestSearchCommand:
 
     def test_search_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["search", "query"])
         assert result.exit_code != 0
 
@@ -405,8 +405,8 @@ class TestMemoryStatus:
 
     def test_status_empty(self) -> None:
         """status() with no memories returns zero counts."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig()
@@ -426,8 +426,8 @@ class TestMemoryStatus:
 
     def test_status_with_memories(self) -> None:
         """status() computes correct distributions and averages."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)
@@ -477,8 +477,8 @@ class TestMemoryStatus:
 
     def test_status_with_user_id(self) -> None:
         """status(user_id=...) passes user_id to get_all()."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig()
@@ -494,8 +494,8 @@ class TestMemoryStatus:
 
     def test_status_missing_metadata_defaults(self) -> None:
         """Memories without memx_ metadata use defaults."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig()
@@ -681,7 +681,7 @@ class TestLearnCommand:
 
     def test_learn_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["learn", "content"])
         assert result.exit_code != 0
 
@@ -841,7 +841,7 @@ class TestListCommand:
 
     def test_list_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["list"])
         assert result.exit_code != 0
 
@@ -981,7 +981,7 @@ class TestForgetCommand:
 
     def test_forget_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["forget", "abc123", "--yes"])
         assert result.exit_code != 0
 
@@ -1064,7 +1064,7 @@ class TestSweepCommand:
 
     def test_sweep_memory_init_failure(self, runner: CliRunner) -> None:
         """Memory initialization failure shows error and exits."""
-        with patch("memx.cli.main._create_memory", return_value=None):
+        with patch("memx.core.cli.main._create_memory", return_value=None):
             result = runner.invoke(cli, ["sweep"])
         assert result.exit_code != 0
 
@@ -1092,7 +1092,7 @@ class TestHelperFunctions:
 
     def test_apply_filters_scope(self) -> None:
         """_apply_filters filters by scope correctly."""
-        from memx.cli.main import _apply_filters
+        from memx.core.cli.main import _apply_filters
 
         memories = SAMPLE_ALL_MEMORIES["memories"]
         filtered = _apply_filters(memories, scope="project:myapp")
@@ -1103,7 +1103,7 @@ class TestHelperFunctions:
 
     def test_apply_filters_type(self) -> None:
         """_apply_filters filters by knowledge type correctly."""
-        from memx.cli.main import _apply_filters
+        from memx.core.cli.main import _apply_filters
 
         memories = SAMPLE_ALL_MEMORIES["memories"]
         filtered = _apply_filters(memories, knowledge_type="tool_pattern")
@@ -1112,7 +1112,7 @@ class TestHelperFunctions:
 
     def test_apply_filters_both(self) -> None:
         """_apply_filters with both scope and type."""
-        from memx.cli.main import _apply_filters
+        from memx.core.cli.main import _apply_filters
 
         memories = SAMPLE_ALL_MEMORIES["memories"]
         filtered = _apply_filters(
@@ -1123,7 +1123,7 @@ class TestHelperFunctions:
 
     def test_apply_filters_no_match(self) -> None:
         """_apply_filters returns empty list when no match."""
-        from memx.cli.main import _apply_filters
+        from memx.core.cli.main import _apply_filters
 
         memories = SAMPLE_ALL_MEMORIES["memories"]
         filtered = _apply_filters(memories, scope="nonexistent")
@@ -1131,19 +1131,19 @@ class TestHelperFunctions:
 
     def test_parse_tags_json_string(self) -> None:
         """_parse_tags parses JSON string tags."""
-        from memx.cli.main import _parse_tags
+        from memx.core.cli.main import _parse_tags
 
         assert _parse_tags('["a", "b"]') == ["a", "b"]
 
     def test_parse_tags_list(self) -> None:
         """_parse_tags passes through list tags."""
-        from memx.cli.main import _parse_tags
+        from memx.core.cli.main import _parse_tags
 
         assert _parse_tags(["x", "y"]) == ["x", "y"]
 
     def test_parse_tags_invalid(self) -> None:
         """_parse_tags returns empty for invalid input."""
-        from memx.cli.main import _parse_tags
+        from memx.core.cli.main import _parse_tags
 
         assert _parse_tags("not json") == []
         assert _parse_tags(None) == []

@@ -8,10 +8,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from memx.config import ReflectorConfig
-from memx.engines.reflector.engine import ReflectorEngine
-from memx.privacy.sanitizer import PrivacySanitizer
-from memx.types import (
+from memx.core.config import ReflectorConfig
+from memx.core.engines.reflector.engine import ReflectorEngine
+from memx.core.privacy.sanitizer import PrivacySanitizer
+from memx.core.types import (
     BulletSection,
     CandidateBullet,
     DetectedPattern,
@@ -132,14 +132,14 @@ class TestReflectCodeHeavy:
         assert bullets == []
 
 
-# -- Test 5: Default mode is "rules" ----------------------------------------
+# -- Test 5: Default mode is "hybrid" ----------------------------------------
 
 
 class TestModeRulesDefault:
     def test_mode_rules_default(self) -> None:
-        """Default mode is 'rules'."""
+        """Default mode is 'hybrid'."""
         engine = ReflectorEngine()
-        assert engine.mode == "rules"
+        assert engine.mode == "hybrid"
 
     def test_mode_explicit_rules(self) -> None:
         """Explicit config mode='rules' is accepted as-is."""
@@ -163,7 +163,7 @@ class TestModeLlm:
         """mode='llm' falls back to 'rules' when LLM init fails."""
         config = ReflectorConfig(mode="llm")
         with patch(
-            "memx.engines.reflector.engine.ReflectorEngine._init_llm_components",
+            "memx.core.engines.reflector.engine.ReflectorEngine._init_llm_components",
             side_effect=RuntimeError("no litellm"),
         ):
             engine = ReflectorEngine.__new__(ReflectorEngine)
@@ -426,13 +426,13 @@ class TestLLMEvaluatorParsing:
     """Test LLMEvaluator._parse_response with mock JSON responses."""
 
     def _make_evaluator(self) -> object:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         config = ReflectorConfig(mode="llm")
         return LLMEvaluator(config)
 
     def test_parse_valid_response(self) -> None:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator: LLMEvaluator = self._make_evaluator()  # type: ignore[assignment]
         event = _error_event()
@@ -446,7 +446,7 @@ class TestLLMEvaluatorParsing:
         assert "rustup" in result.pattern.content
 
     def test_parse_should_record_false(self) -> None:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator: LLMEvaluator = self._make_evaluator()  # type: ignore[assignment]
         event = _event()
@@ -455,7 +455,7 @@ class TestLLMEvaluatorParsing:
         assert result is None
 
     def test_parse_invalid_json(self) -> None:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator: LLMEvaluator = self._make_evaluator()  # type: ignore[assignment]
         event = _event()
@@ -463,7 +463,7 @@ class TestLLMEvaluatorParsing:
         assert result is None
 
     def test_parse_markdown_fenced_json(self) -> None:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator: LLMEvaluator = self._make_evaluator()  # type: ignore[assignment]
         event = _error_event()
@@ -473,7 +473,7 @@ class TestLLMEvaluatorParsing:
         assert result.knowledge_type == KnowledgeType.METHOD
 
     def test_parse_invalid_enum_values_fallback(self) -> None:
-        from memx.engines.reflector.llm_evaluator import LLMEvaluator
+        from memx.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator: LLMEvaluator = self._make_evaluator()  # type: ignore[assignment]
         event = _event()
@@ -491,7 +491,7 @@ class TestLLMDistillerParsing:
     """Test LLMDistiller._parse_response with mock JSON responses."""
 
     def _make_distiller(self) -> object:
-        from memx.engines.reflector.llm_distiller import LLMDistiller
+        from memx.core.engines.reflector.llm_distiller import LLMDistiller
 
         config = ReflectorConfig(mode="llm")
         return LLMDistiller(config)
@@ -510,7 +510,7 @@ class TestLLMDistillerParsing:
         )
 
     def test_parse_valid_response(self) -> None:
-        from memx.engines.reflector.llm_distiller import LLMDistiller
+        from memx.core.engines.reflector.llm_distiller import LLMDistiller
 
         distiller: LLMDistiller = self._make_distiller()  # type: ignore[assignment]
         candidate = self._make_candidate()
@@ -526,7 +526,7 @@ class TestLLMDistillerParsing:
         assert result.instructivity_score == 80.0
 
     def test_parse_invalid_json_returns_none(self) -> None:
-        from memx.engines.reflector.llm_distiller import LLMDistiller
+        from memx.core.engines.reflector.llm_distiller import LLMDistiller
 
         distiller: LLMDistiller = self._make_distiller()  # type: ignore[assignment]
         candidate = self._make_candidate()
@@ -534,7 +534,7 @@ class TestLLMDistillerParsing:
         assert result is None
 
     def test_fallback_distill(self) -> None:
-        from memx.engines.reflector.llm_distiller import LLMDistiller
+        from memx.core.engines.reflector.llm_distiller import LLMDistiller
 
         distiller: LLMDistiller = self._make_distiller()  # type: ignore[assignment]
         candidate = self._make_candidate()

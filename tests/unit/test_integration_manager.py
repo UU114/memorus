@@ -8,8 +8,8 @@ from typing import Optional
 
 import pytest
 
-from memx.config import IntegrationConfig
-from memx.integration.hooks import (
+from memx.core.config import IntegrationConfig
+from memx.core.integration.hooks import (
     BaseHook,
     ContextInjection,
     PostActionHook,
@@ -17,7 +17,7 @@ from memx.integration.hooks import (
     SessionEndHook,
     ToolEvent,
 )
-from memx.integration.manager import IntegrationManager
+from memx.core.integration.manager import IntegrationManager
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +321,7 @@ class TestFirePreInference:
         failing = FailingPreInferenceHook()
         fallback = StubPreInferenceHook("fallback_pre")
         mgr.register_hooks([failing, fallback])
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             result = asyncio.run(mgr.fire_pre_inference("test"))
         assert result is not None
         assert fallback.call_count == 1
@@ -330,7 +330,7 @@ class TestFirePreInference:
     def test_all_hooks_fail_returns_none(self, caplog: pytest.LogCaptureFixture) -> None:
         mgr = IntegrationManager()
         mgr.register_hooks([FailingPreInferenceHook()])
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             result = asyncio.run(mgr.fire_pre_inference("test"))
         assert result is None
         assert "failed" in caplog.text
@@ -388,7 +388,7 @@ class TestFirePostAction:
         failing = FailingPostActionHook()
         ok_hook = StubPostActionHook("ok_post")
         mgr.register_hooks([failing, ok_hook])
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             asyncio.run(
                 mgr.fire_post_action(self._make_event())
             )
@@ -447,7 +447,7 @@ class TestFireSessionEnd:
         failing = FailingSessionEndHook()
         ok_hook = StubSessionEndHook("ok_session")
         mgr.register_hooks([failing, ok_hook])
-        with caplog.at_level(logging.WARNING, logger="memx.integration.manager"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.integration.manager"):
             asyncio.run(
                 mgr.fire_session_end("sess-1")
             )

@@ -7,7 +7,7 @@ import warnings
 import pytest
 from pydantic import ValidationError
 
-from memx.config import (
+from memx.core.config import (
     CuratorConfig,
     DaemonConfig,
     DecayConfig,
@@ -17,7 +17,7 @@ from memx.config import (
     ReflectorConfig,
     RetrievalConfig,
 )
-from memx.exceptions import ConfigurationError
+from memx.core.exceptions import ConfigurationError
 
 
 # ── Default construction ───────────────────────────────────────────────
@@ -48,7 +48,7 @@ class TestMemXConfigDefaults:
 class TestReflectorConfigDefaults:
     def test_defaults(self) -> None:
         r = ReflectorConfig()
-        assert r.mode == "rules"
+        assert r.mode == "hybrid"
         assert r.min_score == 30.0
         assert r.max_content_length == 500
         assert r.max_code_lines == 3

@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from memx.engines.generator.engine import BulletForSearch, GeneratorEngine
+from memx.core.engines.generator.engine import BulletForSearch, GeneratorEngine
 
 # Threshold in seconds (50 ms).  Doubled to 100 ms as safety margin for
 # varying CI hardware — see STORY-045 note on adaptive thresholds.

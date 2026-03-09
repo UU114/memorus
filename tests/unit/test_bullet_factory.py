@@ -5,8 +5,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from memx.types import BulletMetadata, BulletSection, KnowledgeType, SourceType
-from memx.utils.bullet_factory import MEMX_PREFIX, BulletFactory
+from memx.core.types import BulletMetadata, BulletSection, KnowledgeType, SourceType
+from memx.core.utils.bullet_factory import MEMX_PREFIX, BulletFactory
 
 # ── BulletFactory.create ──────────────────────────────────────────────
 
@@ -90,6 +90,23 @@ class TestToMem0Metadata:
         assert result["memx_instructivity_score"] == 75.0
         assert result["memx_recall_count"] == 3
         assert result["memx_decay_weight"] == 0.85
+
+    def test_schema_version_serialised(self) -> None:
+        meta = BulletMetadata(schema_version=2)
+        result = BulletFactory.to_mem0_metadata(meta)
+        assert result["memx_schema_version"] == 2
+
+    def test_incompatible_tags_serialised_as_json_string(self) -> None:
+        meta = BulletMetadata(incompatible_tags=["v2-only", "team-ext"])
+        result = BulletFactory.to_mem0_metadata(meta)
+        assert isinstance(result["memx_incompatible_tags"], str)
+        assert json.loads(result["memx_incompatible_tags"]) == ["v2-only", "team-ext"]
+
+    def test_default_schema_version_and_incompatible_tags(self) -> None:
+        meta = BulletMetadata()
+        result = BulletFactory.to_mem0_metadata(meta)
+        assert result["memx_schema_version"] == 1
+        assert json.loads(result["memx_incompatible_tags"]) == []
 
 
 # ── BulletFactory.from_mem0_payload ───────────────────────────────────
@@ -216,6 +233,40 @@ class TestFromMem0Payload:
         mem0_meta = BulletFactory.to_mem0_metadata(original)
         restored = BulletFactory.from_mem0_payload({"metadata": mem0_meta})
         assert restored.last_recall is None
+
+    def test_legacy_payload_missing_new_fields_uses_defaults(self) -> None:
+        """Old payloads without schema_version/incompatible_tags get defaults."""
+        payload = {
+            "metadata": {
+                "memx_section": "general",
+                "memx_instructivity_score": 50.0,
+            }
+        }
+        meta = BulletFactory.from_mem0_payload(payload)
+        assert meta.schema_version == 1
+        assert meta.incompatible_tags == []
+
+    def test_schema_version_round_trip(self) -> None:
+        original = BulletMetadata(schema_version=3)
+        mem0_meta = BulletFactory.to_mem0_metadata(original)
+        restored = BulletFactory.from_mem0_payload({"metadata": mem0_meta})
+        assert restored.schema_version == 3
+
+    def test_incompatible_tags_round_trip(self) -> None:
+        original = BulletMetadata(incompatible_tags=["v2-only", "team-ext"])
+        mem0_meta = BulletFactory.to_mem0_metadata(original)
+        restored = BulletFactory.from_mem0_payload({"metadata": mem0_meta})
+        assert restored.incompatible_tags == ["v2-only", "team-ext"]
+
+    def test_incompatible_tags_as_native_list(self) -> None:
+        """If mem0 returns lists natively, still works."""
+        payload = {
+            "metadata": {
+                "memx_incompatible_tags": ["a", "b"],
+            }
+        }
+        meta = BulletFactory.from_mem0_payload(payload)
+        assert meta.incompatible_tags == ["a", "b"]
 
 
 # ── BulletFactory.merge_metadata ──────────────────────────────────────

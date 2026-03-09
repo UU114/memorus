@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from memx.engines.generator.score_merger import ScoredBullet
-from memx.utils.token_counter import TokenBudgetTrimmer
+from memx.core.engines.generator.score_merger import ScoredBullet
+from memx.core.utils.token_counter import TokenBudgetTrimmer
 
 
 # ── Helper factories ────────────────────────────────────────────────────

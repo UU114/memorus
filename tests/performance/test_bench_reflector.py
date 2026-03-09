@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from memx.engines.reflector.engine import ReflectorEngine
-from memx.types import InteractionEvent
+from memx.core.engines.reflector.engine import ReflectorEngine
+from memx.core.types import InteractionEvent
 
 # Threshold in seconds (20 ms).  Doubled to 40 ms as safety margin —
 # see STORY-045 note on adaptive thresholds.

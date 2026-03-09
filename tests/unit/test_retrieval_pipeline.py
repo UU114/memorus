@@ -10,14 +10,14 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
-from memx.config import DecayConfig, RetrievalConfig
-from memx.engines.decay.engine import DecayEngine
-from memx.engines.generator.engine import BulletForSearch, GeneratorEngine
-from memx.engines.generator.metadata_matcher import MetadataInfo
-from memx.engines.generator.score_merger import ScoredBullet
-from memx.engines.generator.vector_searcher import VectorSearcher
-from memx.pipeline.retrieval import RecallReinforcer, RetrievalPipeline, SearchResult
-from memx.utils.token_counter import TokenBudgetTrimmer
+from memx.core.config import DecayConfig, RetrievalConfig
+from memx.core.engines.decay.engine import DecayEngine
+from memx.core.engines.generator.engine import BulletForSearch, GeneratorEngine
+from memx.core.engines.generator.metadata_matcher import MetadataInfo
+from memx.core.engines.generator.score_merger import ScoredBullet
+from memx.core.engines.generator.vector_searcher import VectorSearcher
+from memx.core.pipeline.retrieval import RecallReinforcer, RetrievalPipeline, SearchResult
+from memx.core.utils.token_counter import TokenBudgetTrimmer
 
 # ── Helper fixtures ──────────────────────────────────────────────────────
 
@@ -484,8 +484,8 @@ class TestMemorySearchACEPath:
 
     def test_memory_search_ace_path(self) -> None:
         """ACE enabled + pipeline exists -> returns ace_search dict."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)
@@ -515,8 +515,8 @@ class TestMemorySearchACEPath:
 
     def test_memory_search_ace_no_pipeline_falls_back(self) -> None:
         """ACE enabled but pipeline is None -> falls back to proxy."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)
@@ -534,8 +534,8 @@ class TestMemorySearchACEPath:
 
     def test_memory_search_ace_failure_falls_back(self) -> None:
         """ACE search failure -> fallback to mem0 proxy."""
-        from memx.config import MemXConfig
-        from memx.memory import Memory
+        from memx.core.config import MemXConfig
+        from memx.core.memory import Memory
 
         m = Memory.__new__(Memory)
         m._config = MemXConfig(ace_enabled=True)
@@ -566,9 +566,9 @@ class TestIngestPipelineCuratorIntegration:
 
     def test_curator_dedup_adds_new(self) -> None:
         """Curator classifies candidate as 'to_add' -> bullet is written."""
-        from memx.engines.curator.engine import CurateResult, ExistingBullet
-        from memx.pipeline.ingest import IngestPipeline
-        from memx.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
+        from memx.core.engines.curator.engine import CurateResult, ExistingBullet
+        from memx.core.pipeline.ingest import IngestPipeline
+        from memx.core.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
 
         candidate = CandidateBullet(
             content="new bullet content",
@@ -603,9 +603,9 @@ class TestIngestPipelineCuratorIntegration:
 
     def test_curator_dedup_skips(self) -> None:
         """Curator classifies candidate as 'to_skip' -> bullet not written."""
-        from memx.engines.curator.engine import CurateResult
-        from memx.pipeline.ingest import IngestPipeline
-        from memx.types import CandidateBullet
+        from memx.core.engines.curator.engine import CurateResult
+        from memx.core.pipeline.ingest import IngestPipeline
+        from memx.core.types import CandidateBullet
 
         candidate = CandidateBullet(content="")
 
@@ -634,8 +634,8 @@ class TestIngestPipelineCuratorIntegration:
 
     def test_curator_failure_inserts_all(self) -> None:
         """Curator raises -> all candidates are inserted (graceful degradation)."""
-        from memx.pipeline.ingest import IngestPipeline
-        from memx.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
+        from memx.core.pipeline.ingest import IngestPipeline
+        from memx.core.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
 
         candidate = CandidateBullet(
             content="bullet content",
@@ -667,8 +667,8 @@ class TestIngestPipelineCuratorIntegration:
 
     def test_no_curator_skips_dedup(self) -> None:
         """No curator -> dedup step is skipped entirely."""
-        from memx.pipeline.ingest import IngestPipeline
-        from memx.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
+        from memx.core.pipeline.ingest import IngestPipeline
+        from memx.core.types import BulletSection, CandidateBullet, KnowledgeType, SourceType
 
         candidate = CandidateBullet(
             content="bullet content",

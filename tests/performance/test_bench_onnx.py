@@ -44,7 +44,7 @@ _P95_THRESHOLD_SEC = 0.020
 @pytest.mark.skipif(not _ALL_DEPS, reason=_SKIP_REASON)
 def test_onnx_embed_single(benchmark: Any) -> None:
     """ONNXEmbedder.embed() single text should complete within threshold."""
-    from memx.embeddings.onnx import ONNXEmbedder
+    from memx.core.embeddings.onnx import ONNXEmbedder
 
     embedder = ONNXEmbedder()
 
@@ -67,7 +67,7 @@ def test_onnx_embed_single(benchmark: Any) -> None:
 @pytest.mark.skipif(not _ALL_DEPS, reason=_SKIP_REASON)
 def test_onnx_embed_empty(benchmark: Any) -> None:
     """ONNXEmbedder.embed() with empty text should return zero vector instantly."""
-    from memx.embeddings.onnx import ONNXEmbedder
+    from memx.core.embeddings.onnx import ONNXEmbedder
 
     embedder = ONNXEmbedder()
     embedder.embed("warmup")  # Trigger lazy load
@@ -83,7 +83,7 @@ def test_onnx_embed_empty(benchmark: Any) -> None:
 @pytest.mark.skipif(not _ALL_DEPS, reason=_SKIP_REASON)
 def test_onnx_embed_batch_5(benchmark: Any) -> None:
     """ONNXEmbedder.embed_batch() with 5 texts for throughput measurement."""
-    from memx.embeddings.onnx import ONNXEmbedder
+    from memx.core.embeddings.onnx import ONNXEmbedder
 
     embedder = ONNXEmbedder()
     embedder.embed("warmup")  # Trigger lazy load

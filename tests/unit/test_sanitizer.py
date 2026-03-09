@@ -6,8 +6,8 @@ import re
 
 import pytest
 
-from memx.privacy.patterns import BUILTIN_PATTERNS
-from memx.privacy.sanitizer import FilteredItem, PrivacySanitizer, SanitizeResult
+from memx.core.privacy.patterns import BUILTIN_PATTERNS
+from memx.core.privacy.sanitizer import FilteredItem, PrivacySanitizer, SanitizeResult
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────

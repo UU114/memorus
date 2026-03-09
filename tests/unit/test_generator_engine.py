@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 import pytest
 
-from memx.config import RetrievalConfig
-from memx.engines.generator.engine import BulletForSearch, GeneratorEngine
-from memx.engines.generator.metadata_matcher import MetadataInfo
-from memx.engines.generator.vector_searcher import VectorMatch, VectorSearcher
+from memx.core.config import RetrievalConfig
+from memx.core.engines.generator.engine import BulletForSearch, GeneratorEngine
+from memx.core.engines.generator.metadata_matcher import MetadataInfo
+from memx.core.engines.generator.vector_searcher import VectorMatch, VectorSearcher
 
 # ── Helper fixtures ──────────────────────────────────────────────────────
 
@@ -245,7 +245,7 @@ class TestSearchDegradedMode:
         engine = GeneratorEngine()
         bullets = [_make_bullet("b1", "test content")]
 
-        with caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"):
             engine.search("test", bullets)
             engine.search("test", bullets)
             engine.search("test", bullets)
@@ -279,14 +279,14 @@ class TestAutoRecovery:
         bullets = [_make_bullet("b1", "test content")]
 
         # First search: degraded
-        with caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"):
+        with caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"):
             engine.search("test", bullets)
         assert engine.mode == "degraded"
 
         # Simulate embedding recovery
         vs._search_fn = lambda **kw: []
 
-        with caplog.at_level(logging.INFO, logger="memx.engines.generator.engine"):
+        with caplog.at_level(logging.INFO, logger="memx.core.engines.generator.engine"):
             engine.search("test", bullets)
         assert engine.mode == "full"
 
@@ -329,7 +329,7 @@ class TestErrorIsolation:
             patch.object(
                 engine._exact_matcher, "match_batch", side_effect=RuntimeError("L1 exploded")
             ),
-            caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"),
+            caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"),
         ):
             results = engine.search("test", bullets)
 
@@ -346,7 +346,7 @@ class TestErrorIsolation:
             patch.object(
                 engine._fuzzy_matcher, "match_batch", side_effect=RuntimeError("L2 exploded")
             ),
-            caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"),
+            caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"),
         ):
             results = engine.search("test", bullets)
 
@@ -362,7 +362,7 @@ class TestErrorIsolation:
             patch.object(
                 engine._metadata_matcher, "match", side_effect=RuntimeError("L3 exploded")
             ),
-            caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"),
+            caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"),
         ):
             results = engine.search("git", bullets)
 
@@ -379,7 +379,7 @@ class TestErrorIsolation:
             patch.object(
                 engine._vector_searcher, "search", side_effect=RuntimeError("L4 exploded")
             ),
-            caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"),
+            caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"),
         ):
             results = engine.search("test", bullets)
 
@@ -401,7 +401,7 @@ class TestErrorIsolation:
             patch.object(
                 engine._fuzzy_matcher, "match_batch", side_effect=RuntimeError("L2 fail")
             ),
-            caplog.at_level(logging.WARNING, logger="memx.engines.generator.engine"),
+            caplog.at_level(logging.WARNING, logger="memx.core.engines.generator.engine"),
         ):
             results = engine.search("test", bullets)
 
@@ -503,7 +503,7 @@ class TestEndToEnd:
             _make_bullet("b1", "git rebase", days_ago=30),
             _make_bullet("b2", "git rebase", days_ago=1),
         ]
-        results = engine.search("git rebase", bullets)
+        results = engine.search("git rebase", bullets, now=_NOW)
         # b2 is more recent, should rank higher
         assert results[0].bullet_id == "b2"
         assert results[0].recency_boost > results[1].recency_boost

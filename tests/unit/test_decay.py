@@ -13,14 +13,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from memx.config import DecayConfig
-from memx.engines.decay.engine import (
+from memx.core.config import DecayConfig
+from memx.core.engines.decay.engine import (
     BulletDecayInfo,
     DecayEngine,
     DecayResult,
     DecaySweepResult,
 )
-from memx.engines.decay.formulas import boosted_weight, exponential_decay
+from memx.core.engines.decay.formulas import boosted_weight, exponential_decay
 
 # ---------------------------------------------------------------------------
 # Helper: fixed reference time

@@ -9,11 +9,11 @@ from typing import Any
 
 import pytest
 
-from memx.engines.curator.engine import ExistingBullet
-from memx.engines.decay.engine import BulletDecayInfo
-from memx.engines.generator.engine import BulletForSearch
-from memx.engines.generator.metadata_matcher import MetadataInfo
-from memx.types import CandidateBullet, InteractionEvent
+from memx.core.engines.curator.engine import ExistingBullet
+from memx.core.engines.decay.engine import BulletDecayInfo
+from memx.core.engines.generator.engine import BulletForSearch
+from memx.core.engines.generator.metadata_matcher import MetadataInfo
+from memx.core.types import CandidateBullet, InteractionEvent
 
 # Seed for reproducibility across benchmark runs
 _RNG_SEED = 42

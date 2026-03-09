@@ -6,8 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from memx.config import RetrievalConfig
-from memx.engines.generator.score_merger import (
+from memx.core.config import RetrievalConfig
+from memx.core.engines.generator.score_merger import (
     MAX_KEYWORD_SCORE,
     BulletInfo,
     ScoreMerger,
@@ -186,7 +186,7 @@ class TestMergeFullMode:
         }
         kw = {"old": 35.0, "new": 35.0}
         sem = {"old": 1.0, "new": 1.0}
-        results = merger.merge(kw, sem, infos)
+        results = merger.merge(kw, sem, infos, now=_NOW)
         # New bullet gets 1.2x recency boost
         new_r = next(r for r in results if r.bullet_id == "new")
         old_r = next(r for r in results if r.bullet_id == "old")
@@ -285,7 +285,7 @@ class TestMergeDegradedMode:
             "b1": _make_info("b1", "old", days_ago=30),
             "b2": _make_info("b2", "new", days_ago=2),
         }
-        results = merger.merge({"b1": 35.0, "b2": 35.0}, None, infos)
+        results = merger.merge({"b1": 35.0, "b2": 35.0}, None, infos, now=_NOW)
         new_r = next(r for r in results if r.bullet_id == "b2")
         old_r = next(r for r in results if r.bullet_id == "b1")
         assert new_r.recency_boost == 1.2
@@ -362,7 +362,7 @@ class TestFormulaVerification:
         kw = {"b1": 25.0}  # NormKw = 25/35
         sem = {"b1": 0.7}
 
-        results = merger.merge(kw, sem, infos)
+        results = merger.merge(kw, sem, infos, now=_NOW)
         r = results[0]
 
         norm_kw = 25.0 / 35.0
@@ -381,7 +381,7 @@ class TestFormulaVerification:
         infos = {"b1": _make_info("b1", "test", days_ago=3, decay_weight=0.9)}
         kw = {"b1": 20.0}
 
-        results = merger.merge(kw, None, infos)
+        results = merger.merge(kw, None, infos, now=_NOW)
         r = results[0]
 
         norm_kw = 20.0 / 35.0

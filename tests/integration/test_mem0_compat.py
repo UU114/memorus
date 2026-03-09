@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from memx.config import MemXConfig
-from memx.memory import Memory
+from memx.core.config import MemXConfig
+from memx.core.memory import Memory
 
 
 @pytest.fixture()

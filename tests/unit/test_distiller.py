@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from memx.config import ReflectorConfig
-from memx.engines.reflector.distiller import BulletDistiller
-from memx.types import (
+from memx.core.config import ReflectorConfig
+from memx.core.engines.reflector.distiller import BulletDistiller
+from memx.core.types import (
     BulletSection,
     CandidateBullet,
     DetectedPattern,

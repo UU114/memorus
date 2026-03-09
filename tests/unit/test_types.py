@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import pytest
 from pydantic import ValidationError
 
-from memx.types import (
+from memx.core.types import (
     BulletMetadata,
     BulletSection,
     CandidateBullet,
@@ -196,6 +196,55 @@ class TestBulletMetadataSerialization:
     def test_invalid_type_rejected(self) -> None:
         with pytest.raises(ValidationError):
             BulletMetadata.model_validate({"instructivity_score": "not_a_number"})
+
+
+class TestBulletMetadataNewFields:
+    """Tests for schema_version and incompatible_tags fields."""
+
+    def test_schema_version_default(self) -> None:
+        b = BulletMetadata()
+        assert b.schema_version == 1
+
+    def test_schema_version_custom(self) -> None:
+        b = BulletMetadata(schema_version=2)
+        assert b.schema_version == 2
+
+    def test_incompatible_tags_default(self) -> None:
+        b = BulletMetadata()
+        assert b.incompatible_tags == []
+
+    def test_incompatible_tags_custom(self) -> None:
+        b = BulletMetadata(incompatible_tags=["v2-only", "team-ext"])
+        assert b.incompatible_tags == ["v2-only", "team-ext"]
+
+    def test_incompatible_tags_list_isolation(self) -> None:
+        a = BulletMetadata()
+        b = BulletMetadata()
+        a.incompatible_tags.append("x")
+        assert b.incompatible_tags == []
+
+    def test_schema_version_in_model_dump(self) -> None:
+        b = BulletMetadata(schema_version=2, incompatible_tags=["a"])
+        d = b.model_dump()
+        assert d["schema_version"] == 2
+        assert d["incompatible_tags"] == ["a"]
+
+    def test_round_trip_with_new_fields(self) -> None:
+        original = BulletMetadata(
+            schema_version=3,
+            incompatible_tags=["team-v2", "conflict-marker"],
+        )
+        d = original.model_dump()
+        restored = BulletMetadata.model_validate(d)
+        assert restored.schema_version == original.schema_version
+        assert restored.incompatible_tags == original.incompatible_tags
+
+    def test_backward_compat_missing_new_fields(self) -> None:
+        """Old data without schema_version/incompatible_tags uses defaults."""
+        raw = {"section": "general", "instructivity_score": 50}
+        b = BulletMetadata.model_validate(raw)
+        assert b.schema_version == 1
+        assert b.incompatible_tags == []
 
 
 class TestBulletMetadataListIsolation:

@@ -1,7 +1,7 @@
 """Smoke tests for memx package structure."""
 
 import memx
-from memx.exceptions import ConfigurationError, EngineError, MemXError, PipelineError
+from memx.core.exceptions import ConfigurationError, EngineError, MemXError, PipelineError
 
 
 def test_version() -> None:

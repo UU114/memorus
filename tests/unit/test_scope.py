@@ -13,16 +13,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from memx.cli.main import cli
-from memx.config import CuratorConfig, MemXConfig, RetrievalConfig
-from memx.engines.curator.engine import CuratorEngine, ExistingBullet
-from memx.engines.generator.engine import BulletForSearch, GeneratorEngine
-from memx.engines.generator.metadata_matcher import MetadataInfo
-from memx.engines.generator.score_merger import BulletInfo, ScoreMerger
-from memx.memory import Memory, _validate_scope
-from memx.pipeline.ingest import IngestPipeline, IngestResult
-from memx.pipeline.retrieval import RetrievalPipeline, SearchResult
-from memx.types import BulletMetadata, BulletSection, CandidateBullet, KnowledgeType, SourceType
+from memx.core.cli.main import cli
+from memx.core.config import CuratorConfig, MemXConfig, RetrievalConfig
+from memx.core.engines.curator.engine import CuratorEngine, ExistingBullet
+from memx.core.engines.generator.engine import BulletForSearch, GeneratorEngine
+from memx.core.engines.generator.metadata_matcher import MetadataInfo
+from memx.core.engines.generator.score_merger import BulletInfo, ScoreMerger
+from memx.core.memory import Memory, _validate_scope
+from memx.core.pipeline.ingest import IngestPipeline, IngestResult
+from memx.core.pipeline.retrieval import RetrievalPipeline, SearchResult
+from memx.core.types import BulletMetadata, BulletSection, CandidateBullet, KnowledgeType, SourceType
 
 _NOW = datetime(2026, 2, 27, 12, 0, 0, tzinfo=timezone.utc)
 
@@ -238,7 +238,7 @@ class TestScoreMergerScopeBoost:
             "b1": _make_info("b1", "recent scoped", scope="project:myapp", days_ago=2),
         }
         kw = {"b1": 35.0}
-        results = merger.merge(kw, None, infos, target_scope="project:myapp")
+        results = merger.merge(kw, None, infos, target_scope="project:myapp", now=_NOW)
         # FinalScore = 1.0 * 1.0 * 1.2 * 1.3 = 1.56
         expected = 1.0 * 1.0 * 1.2 * 1.3
         assert abs(results[0].final_score - expected) < 1e-9
@@ -623,7 +623,7 @@ class TestCLIScopeOption:
         runner = CliRunner()
         mock_memory = MagicMock()
         mock_memory.search.return_value = {"results": []}
-        with patch("memx.cli.main._create_memory", return_value=mock_memory):
+        with patch("memx.core.cli.main._create_memory", return_value=mock_memory):
             result = runner.invoke(
                 cli, ["search", "query", "--scope", "project:myapp"]
             )
@@ -636,7 +636,7 @@ class TestCLIScopeOption:
         runner = CliRunner()
         mock_memory = MagicMock()
         mock_memory.search.return_value = {"results": []}
-        with patch("memx.cli.main._create_memory", return_value=mock_memory):
+        with patch("memx.core.cli.main._create_memory", return_value=mock_memory):
             result = runner.invoke(cli, ["search", "query"])
         assert result.exit_code == 0
         mock_memory.search.assert_called_once_with(
@@ -647,7 +647,7 @@ class TestCLIScopeOption:
         runner = CliRunner()
         mock_memory = MagicMock()
         mock_memory.search.return_value = {"results": []}
-        with patch("memx.cli.main._create_memory", return_value=mock_memory):
+        with patch("memx.core.cli.main._create_memory", return_value=mock_memory):
             result = runner.invoke(
                 cli,
                 ["search", "query", "--scope", "project:myapp", "--limit", "10"],
@@ -773,7 +773,7 @@ class TestScopeEndToEnd:
             "b1": _make_info("b1", "test", scope="project:x", days_ago=3, decay_weight=0.8),
         }
         kw = {"b1": 25.0}
-        results = merger.merge(kw, None, infos, target_scope="project:x")
+        results = merger.merge(kw, None, infos, target_scope="project:x", now=_NOW)
 
         norm_kw = 25.0 / 35.0
         blended = norm_kw * 1.0  # degraded mode kw_weight = 1.0

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 from unittest.mock import MagicMock, patch
 
-from memx.config import MemXConfig
-from memx.memory import Memory
+from memx.core.config import MemXConfig
+from memx.core.memory import Memory
 
 
 # ---------------------------------------------------------------------------
@@ -540,7 +540,7 @@ class TestInitACEEngines:
 
         # Patch imports to fail
         with patch(
-            "memx.memory.Memory._init_ace_engines"
+            "memx.core.memory.Memory._init_ace_engines"
         ) as mock_init:
             mock_init.side_effect = None  # no-op
             m._init_ace_engines()

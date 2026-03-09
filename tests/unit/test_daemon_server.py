@@ -15,15 +15,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from memx.config import DaemonConfig
-from memx.daemon.server import (
+from memx.core.config import DaemonConfig
+from memx.core.daemon.server import (
     PIPE_NAME,
     DaemonRequest,
     DaemonResponse,
     MemXDaemon,
     _is_process_alive,
 )
-from memx.exceptions import DaemonError
+from memx.core.exceptions import DaemonError
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +163,7 @@ class TestPIDManagement:
         with (
             patch.object(type(daemon), "pid_path", new=property(lambda s: pid_path)),
             patch(
-                "memx.daemon.server._is_process_alive", return_value=False
+                "memx.core.daemon.server._is_process_alive", return_value=False
             ),
         ):
             daemon._check_pid()  # Should clean up and not raise
@@ -177,7 +177,7 @@ class TestPIDManagement:
         with (
             patch.object(type(daemon), "pid_path", new=property(lambda s: pid_path)),
             patch(
-                "memx.daemon.server._is_process_alive", return_value=True
+                "memx.core.daemon.server._is_process_alive", return_value=True
             ),
         ):
             with pytest.raises(DaemonError, match="already running"):
@@ -501,7 +501,7 @@ class TestDaemonProperties:
         assert daemon.session_count == 0
 
     def test_ipc_address_windows(self, daemon: MemXDaemon) -> None:
-        with patch("memx.daemon.server.sys") as mock_sys:
+        with patch("memx.core.daemon.server.sys") as mock_sys:
             mock_sys.platform = "win32"
             daemon._config = DaemonConfig()
             addr = daemon.ipc_address
@@ -528,7 +528,7 @@ class TestClassHelpers:
 
     def test_is_daemon_running_no_pid_file(self, tmp_path: Path) -> None:
         with patch(
-            "memx.daemon.server.PID_PATH", tmp_path / "no.pid"
+            "memx.core.daemon.server.PID_PATH", tmp_path / "no.pid"
         ):
             assert MemXDaemon.is_daemon_running() is False
 
@@ -536,9 +536,9 @@ class TestClassHelpers:
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("99999999")
         with (
-            patch("memx.daemon.server.PID_PATH", pid_path),
+            patch("memx.core.daemon.server.PID_PATH", pid_path),
             patch(
-                "memx.daemon.server._is_process_alive", return_value=False
+                "memx.core.daemon.server._is_process_alive", return_value=False
             ),
         ):
             assert MemXDaemon.is_daemon_running() is False
@@ -547,29 +547,29 @@ class TestClassHelpers:
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("12345")
         with (
-            patch("memx.daemon.server.PID_PATH", pid_path),
+            patch("memx.core.daemon.server.PID_PATH", pid_path),
             patch(
-                "memx.daemon.server._is_process_alive", return_value=True
+                "memx.core.daemon.server._is_process_alive", return_value=True
             ),
         ):
             assert MemXDaemon.is_daemon_running() is True
 
     def test_read_pid_no_file(self, tmp_path: Path) -> None:
         with patch(
-            "memx.daemon.server.PID_PATH", tmp_path / "no.pid"
+            "memx.core.daemon.server.PID_PATH", tmp_path / "no.pid"
         ):
             assert MemXDaemon.read_pid() is None
 
     def test_read_pid_valid(self, tmp_path: Path) -> None:
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("42")
-        with patch("memx.daemon.server.PID_PATH", pid_path):
+        with patch("memx.core.daemon.server.PID_PATH", pid_path):
             assert MemXDaemon.read_pid() == 42
 
     def test_read_pid_corrupt(self, tmp_path: Path) -> None:
         pid_path = tmp_path / "daemon.pid"
         pid_path.write_text("not_a_number")
-        with patch("memx.daemon.server.PID_PATH", pid_path):
+        with patch("memx.core.daemon.server.PID_PATH", pid_path):
             assert MemXDaemon.read_pid() is None
 
 
@@ -614,7 +614,7 @@ class TestLifecycle:
         self, daemon: MemXDaemon
     ) -> None:
         with patch(
-            "memx.memory.Memory",
+            "memx.core.memory.Memory",
             side_effect=RuntimeError("init boom"),
         ):
             with pytest.raises(DaemonError, match="initialization failed"):
