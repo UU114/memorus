@@ -33,11 +33,23 @@ class Memory:
     ACE ON: pipeline processing with graceful degradation.
     """
 
-    def __init__(self, config: Optional[dict[str, Any]] = None):
+    def __init__(self, config: Optional[Any] = None):
         from memorus.core.config import MemorusConfig
 
-        logger.debug("Memory.__init__ config=%s", config)
-        self._config = MemorusConfig.from_dict(config or {})
+        # config may be:
+        #   None          → use all defaults
+        #   dict          → legacy dict-based config (ACE + mem0 keys mixed)
+        #   MemoryConfig  → pre-built mem0 1.0.x config object (passed by rest_api)
+        logger.debug("Memory.__init__ config type=%s", type(config).__name__)
+
+        # Determine if this is a raw dict (ACE config) or a pre-built MemoryConfig
+        if isinstance(config, dict) or config is None:
+            self._config = MemorusConfig.from_dict(config or {})
+            raw_mem0_cfg: Any = self._config.to_mem0_config()
+        else:
+            # Assume it's a pre-built mem0 MemoryConfig (or compatible object)
+            self._config = MemorusConfig()
+            raw_mem0_cfg = config  # pass through directly
 
         # Lazy import mem0 to avoid import errors when testing
         self._mem0: Any = None
@@ -45,7 +57,20 @@ class Memory:
         try:
             from mem0 import Memory as Mem0Memory
 
-            self._mem0 = Mem0Memory(config=self._config.to_mem0_config())
+            if raw_mem0_cfg is not None:
+                # raw_mem0_cfg may be a dict (legacy) or a MemoryConfig object (1.0.x)
+                if isinstance(raw_mem0_cfg, dict):
+                    # Legacy: try converting dict to MemoryConfig for 1.0.x
+                    try:
+                        from mem0.configs.base import MemoryConfig as Mem0MemConfig
+                        self._mem0 = Mem0Memory(config=Mem0MemConfig(**raw_mem0_cfg))
+                    except Exception:
+                        self._mem0 = Mem0Memory(config=raw_mem0_cfg)
+                else:
+                    # Already a MemoryConfig object — pass directly
+                    self._mem0 = Mem0Memory(config=raw_mem0_cfg)
+            else:
+                self._mem0 = Mem0Memory()
         except Exception as e:
             # If mem0 can't initialize (e.g., no API key), store the error.
             # Users must handle this if they need actual mem0 functionality.
@@ -236,16 +261,19 @@ class Memory:
         if not self._config.ace_enabled or self._ingest_pipeline is None:
             logger.debug("Memory.add -> proxy mode (ACE off or pipeline=None)")
             mem0 = self._ensure_mem0()
-            return mem0.add(
-                messages,
-                user_id=user_id,
-                agent_id=agent_id,
-                run_id=run_id,
-                metadata=metadata,
-                filters=filters,
-                prompt=prompt,
-                **kwargs,
-            )
+            # mem0ai 1.0.x removed the `filters` kwarg from add(); pass only supported params
+            add_kwargs: dict[str, Any] = {}
+            if user_id is not None:
+                add_kwargs["user_id"] = user_id
+            if agent_id is not None:
+                add_kwargs["agent_id"] = agent_id
+            if run_id is not None:
+                add_kwargs["run_id"] = run_id
+            if metadata is not None:
+                add_kwargs["metadata"] = metadata
+            if prompt is not None:
+                add_kwargs["prompt"] = prompt
+            return mem0.add(messages, **add_kwargs)
 
         # ACE path - delegate to IngestPipeline
         logger.debug("Memory.add -> ACE ingest pipeline")
@@ -408,6 +436,15 @@ class Memory:
         kwargs: dict[str, Any] = {}
         if user_id:
             kwargs["user_id"] = user_id
+
+        # mem0ai 1.0.x requires at least user_id/agent_id/run_id for get_all().
+        # Without a filter, return an empty stats response rather than error.
+        if not kwargs:
+            return {
+                "total": 0,
+                "ace_enabled": self._config.ace_enabled,
+                "note": "Provide user_id query param for user-specific stats",
+            }
 
         raw = self._ensure_mem0().get_all(**kwargs)
         memories = raw.get("memories", []) if isinstance(raw, dict) else []

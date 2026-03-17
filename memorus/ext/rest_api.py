@@ -89,7 +89,7 @@ def _get_memory_dep(request: Request) -> Any:
     return request.app.state.memory
 
 
-def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
+def create_app(config: Optional[Any] = None) -> FastAPI:
     """Create a FastAPI application with Memorus endpoints.
 
     Raises:
@@ -115,6 +115,12 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
         version="0.2.1",
         lifespan=lifespan,
     )
+
+    # ---- Health check (no auth required) -----------------------------------
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
 
     # ---- Endpoints --------------------------------------------------------
 
@@ -192,6 +198,78 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
 # ---------------------------------------------------------------------------
 
 
+def _build_mem0_config_from_env() -> Optional[Any]:
+    """Build a mem0 MemoryConfig from environment variables.
+
+    Constructs a proper MemoryConfig object for mem0 1.0.x which requires
+    structured config objects rather than raw dicts.
+
+    Supported variables:
+      OPENAI_API_KEY          — API key for embedder + LLM backends (required)
+      OPENAI_BASE_URL         — Override base URL (for OpenAI-compatible endpoints)
+      MEMORUS_EMBEDDING_MODEL — Embedding model name (default: text-embedding-3-small)
+      MEMORUS_EMBEDDING_DIMS  — Embedding output dimensions (default: 1536)
+      MEMORUS_LLM_MODEL       — LLM model name for memory extraction (default: gpt-4o-mini)
+      MEMORUS_DATA_DIR        — Persistent data directory (default: /data)
+      MEMORUS_ACE_ENABLED     — Enable ACE pipeline (default: false)
+    """
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    base_url = os.environ.get("OPENAI_BASE_URL", "")
+    embed_model = os.environ.get("MEMORUS_EMBEDDING_MODEL", "text-embedding-3-small")
+    llm_model = os.environ.get("MEMORUS_LLM_MODEL", "gpt-4o-mini")
+    dims_str = os.environ.get("MEMORUS_EMBEDDING_DIMS", "1536")
+    data_dir = os.environ.get("MEMORUS_DATA_DIR", "/data")
+
+    try:
+        dims = int(dims_str)
+    except ValueError:
+        logger.warning("Invalid MEMORUS_EMBEDDING_DIMS=%r, using 1536", dims_str)
+        dims = 1536
+
+    if not api_key:
+        logger.warning(
+            "OPENAI_API_KEY not set — returning None, mem0 will use its defaults."
+        )
+        return None
+
+    try:
+        from mem0.configs.base import MemoryConfig
+
+        embedder_cfg: dict[str, Any] = {
+            "model": embed_model,
+            "embedding_dims": dims,
+            "api_key": api_key,
+        }
+        if base_url:
+            embedder_cfg["openai_base_url"] = base_url
+
+        llm_cfg: dict[str, Any] = {"model": llm_model, "api_key": api_key}
+        if base_url:
+            llm_cfg["openai_base_url"] = base_url
+
+        mem_config = MemoryConfig(
+            vector_store={
+                "provider": "qdrant",
+                "config": {
+                    "collection_name": "memorus",
+                    "path": f"{data_dir}/qdrant",
+                    "embedding_model_dims": dims,
+                },
+            },
+            embedder={"provider": "openai", "config": embedder_cfg},
+            llm={"provider": "openai", "config": llm_cfg},
+            history_db_path=f"{data_dir}/.mem0/history.db",
+        )
+        logger.info(
+            "mem0 MemoryConfig built: embed=%s dims=%d llm=%s base_url=%s qdrant=%s/qdrant",
+            embed_model, dims, llm_model, base_url or "(default)", data_dir,
+        )
+        return mem_config
+    except Exception as exc:
+        logger.error("Failed to build MemoryConfig: %s — returning None", exc)
+        return None
+
+
 def main() -> None:
     """Entry point for ``memorus-api`` console script."""
     if FastAPI is None:
@@ -227,7 +305,8 @@ def main() -> None:
 
     import uvicorn
 
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    mem0_config = _build_mem0_config_from_env()
+    uvicorn.run(create_app(config=mem0_config), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
