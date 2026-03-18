@@ -75,6 +75,14 @@ spec:
               port: 8880
             initialDelaySeconds: 15
             periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 18
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
