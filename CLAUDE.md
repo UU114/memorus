@@ -92,7 +92,7 @@ Auth: `X-API-Key` header (= `MEMORUS_API_KEY` env).
 
 | Consumer | Method | user_id mapping |
 |----------|--------|----------------|
-| lurus-gushen | REST `/memories` | Zitadel sub |
+| lurus-lucrum | REST `/memories` | Zitadel sub |
 | lurus-creator | REST `/memories` (scope: project:{id}) | local project ID |
 | lurus-switch | embedded lib (local SQLite) | device user |
 | Claude Code | MCP (`memorus-mcp`) | developer |
