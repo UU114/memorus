@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "memorus": {
+      "command": "memorus-mcp",
+      "args": ["--config", "~/.openclaw/memorus-config.json"]
+    }
+  }
+}

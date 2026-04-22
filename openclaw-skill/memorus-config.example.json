@@ -1,0 +1,6 @@
+{
+  "ace_enabled": true,
+  "reflector": { "mode": "rules" },
+  "privacy": { "always_sanitize": true },
+  "retrieval": { "max_results": 10, "token_budget": 2000 }
+}
