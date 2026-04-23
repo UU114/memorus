@@ -11,6 +11,7 @@ import logging
 from typing import Optional
 
 from memorus.core.config import ReflectorConfig
+from memorus.core.engines.reflector.distiller import BulletDistiller
 from memorus.core.types import (
     CandidateBullet,
     ScoredCandidate,
@@ -165,6 +166,7 @@ class LLMDistiller:
             related_tools=related_tools,
             key_entities=key_entities,
             tags=tags,
+            sources=BulletDistiller._build_sources(candidate),
         )
 
     @staticmethod
@@ -176,4 +178,5 @@ class LLMDistiller:
             knowledge_type=candidate.knowledge_type,
             source_type=SourceType.INTERACTION,
             instructivity_score=candidate.instructivity_score,
+            sources=BulletDistiller._build_sources(candidate),
         )

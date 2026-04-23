@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from enum import Enum
 
@@ -37,6 +38,68 @@ class SourceType(str, Enum):
     INTERACTION = "interaction"
     MANUAL = "manual"
     IMPORT = "import"
+
+
+# ---------------------------------------------------------------------------
+# SourceRef — immutable reference to a conversation turn that produced a Bullet
+# ---------------------------------------------------------------------------
+
+
+# Maximum number of SourceRef items retained per Bullet. Beyond this, merge
+# keeps the earliest SOURCES_CAP // 2 + latest SOURCES_CAP // 2.
+SOURCES_CAP = 50
+
+
+class SourceRef(BaseModel):
+    """Immutable pointer to the original conversation turn that yielded a Bullet.
+
+    The combination ``(conversation_id, turn_offset)`` uniquely identifies a
+    turn within a conversation; ``turn_hash`` is a content-address allowing
+    later verification and cross-workspace lookups.
+    """
+
+    conversation_id: str
+    turn_hash: str  # SHA256 hex digest, first 16 chars
+    turn_offset: int = Field(ge=0)
+    timestamp: datetime
+    role: str  # "user" | "assistant"
+
+    model_config = {"frozen": True}
+
+    @staticmethod
+    def compute_turn_hash(text: str) -> str:
+        """Compute the canonical 16-char SHA256 prefix used for ``turn_hash``."""
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        return digest[:16]
+
+
+def merge_sources(
+    a: list["SourceRef"],
+    b: list["SourceRef"],
+    cap: int = SOURCES_CAP,
+) -> list["SourceRef"]:
+    """Merge two SourceRef lists with semantics identical to the Rust side.
+
+    Semantics (MUST match ``memorus-core::models::merge_sources``):
+    1. Dedup by ``(conversation_id, turn_offset)`` — first occurrence wins.
+    2. Sort ascending by ``timestamp``.
+    3. If ``len > cap``: keep earliest ``cap // 2`` + latest ``cap // 2``.
+    """
+    seen: set[tuple[str, int]] = set()
+    merged: list[SourceRef] = []
+    for src in [*a, *b]:
+        key = (src.conversation_id, src.turn_offset)
+        if key in seen:
+            continue
+        seen.add(key)
+        merged.append(src)
+
+    merged.sort(key=lambda s: s.timestamp)
+
+    if len(merged) > cap:
+        half = cap // 2
+        merged = merged[:half] + merged[-half:]
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -91,6 +154,7 @@ class CandidateBullet(BaseModel):
     related_files: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     scope: str = "global"
+    sources: list[SourceRef] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -126,3 +190,4 @@ class BulletMetadata(BaseModel):
     incompatible_tags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    sources: list[SourceRef] = Field(default_factory=list)
