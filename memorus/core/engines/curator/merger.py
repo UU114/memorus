@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from memorus.core.engines.curator.engine import ExistingBullet
-from memorus.core.types import CandidateBullet
+from memorus.core.types import CandidateBullet, SourceRef, merge_sources
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +68,27 @@ def _union_list(a: list[str], b: list[str]) -> list[str]:
             seen.add(item)
             result.append(item)
     return result
+
+
+def _extract_existing_sources(metadata: dict[str, Any]) -> list[SourceRef]:
+    """Parse sources from an ExistingBullet.metadata payload.
+
+    The mem0 layer stores sources as a list of dicts; when reloaded from the
+    vector store they may arrive as raw JSON. We normalize both cases here.
+    """
+    raw = metadata.get("sources", [])
+    if not isinstance(raw, list):
+        return []
+    out: list[SourceRef] = []
+    for item in raw:
+        if isinstance(item, SourceRef):
+            out.append(item)
+        elif isinstance(item, dict):
+            try:
+                out.append(SourceRef(**item))
+            except Exception:  # defensive: skip malformed
+                logger.debug("Skipping malformed source in existing metadata: %r", item)
+    return out
 
 
 class KeepBestStrategy(MergeStrategy):
@@ -135,6 +156,11 @@ class KeepBestStrategy(MergeStrategy):
                 candidate.tags,
             )
 
+        merged_source_refs = merge_sources(
+            _extract_existing_sources(existing.metadata),
+            list(candidate.sources),
+        )
+
         return MergeResult(
             merged_content=winner_content,
             merged_metadata={
@@ -143,6 +169,7 @@ class KeepBestStrategy(MergeStrategy):
                 "related_tools": winner_tools,
                 "key_entities": winner_entities,
                 "tags": winner_tags,
+                "sources": [s.model_dump(mode="json") for s in merged_source_refs],
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             },
             source_id=existing.bullet_id,
@@ -188,6 +215,11 @@ class MergeContentStrategy(MergeStrategy):
             candidate.tags,
         )
 
+        merged_source_refs = merge_sources(
+            _extract_existing_sources(existing.metadata),
+            list(candidate.sources),
+        )
+
         return MergeResult(
             merged_content=merged_content,
             merged_metadata={
@@ -196,6 +228,7 @@ class MergeContentStrategy(MergeStrategy):
                 "related_tools": merged_tools,
                 "key_entities": merged_entities,
                 "tags": merged_tags,
+                "sources": [s.model_dump(mode="json") for s in merged_source_refs],
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             },
             source_id=existing.bullet_id,

@@ -360,6 +360,7 @@ class ReflectorEngine:
                 knowledge_type=c.knowledge_type,
                 instructivity_score=c.instructivity_score,
                 source_type=SourceType.INTERACTION,
+                sources=BulletDistiller._build_sources(c),
             )
             for c in candidates
         ]
@@ -373,6 +374,7 @@ class ReflectorEngine:
             knowledge_type=candidate.knowledge_type,
             instructivity_score=candidate.instructivity_score,
             source_type=SourceType.INTERACTION,
+            sources=BulletDistiller._build_sources(candidate),
         )
 
     # ------------------------------------------------------------------

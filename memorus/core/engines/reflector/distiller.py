@@ -13,6 +13,7 @@ from memorus.core.types import (
     CandidateBullet,
     KnowledgeType,
     ScoredCandidate,
+    SourceRef,
     SourceType,
 )
 
@@ -45,10 +46,12 @@ class BulletDistiller:
         was_truncated = len(content) < len(raw_content)
         tools = self._extract_tools(raw_content, candidate.pattern.metadata)
         entities = self._extract_entities(raw_content)
+        sources = self._build_sources(candidate)
 
         logger.debug(
-            "BulletDistiller.distill: content_len=%d->%d truncated=%s tools=%s entities=%s",
+            "BulletDistiller.distill: content_len=%d->%d truncated=%s tools=%s entities=%s sources=%d",
             len(raw_content), len(content), was_truncated, tools, entities[:5],
+            len(sources),
         )
 
         return CandidateBullet(
@@ -59,7 +62,45 @@ class BulletDistiller:
             instructivity_score=candidate.instructivity_score,
             related_tools=tools,
             key_entities=entities,
+            sources=sources,
         )
+
+    @staticmethod
+    def _build_sources(candidate: ScoredCandidate) -> list[SourceRef]:
+        """Build SourceRefs from the originating InteractionEvent (if any).
+
+        We record the assistant turn because assistant messages carry the
+        actionable knowledge; the user prompt is contextual. ``turn_offset``
+        comes from ``event.metadata["turn_offset"]`` when the caller tracks
+        conversation position, else falls back to 0.
+        """
+        event = candidate.pattern.source_event
+        if event is None:
+            return []
+
+        conversation_id = event.session_id or event.user_id
+        if not conversation_id:
+            return []
+
+        meta = event.metadata or {}
+        try:
+            turn_offset = int(meta.get("turn_offset", 0))
+        except (TypeError, ValueError):
+            turn_offset = 0
+        turn_offset = max(turn_offset, 0)
+
+        turn_text = event.assistant_message or event.user_message
+        turn_hash = SourceRef.compute_turn_hash(turn_text)
+
+        return [
+            SourceRef(
+                conversation_id=conversation_id,
+                turn_hash=turn_hash,
+                turn_offset=turn_offset,
+                timestamp=event.timestamp,
+                role="assistant" if event.assistant_message else "user",
+            )
+        ]
 
     def _truncate_content(self, content: str) -> str:
         """Truncate content at sentence boundary, respecting max length."""

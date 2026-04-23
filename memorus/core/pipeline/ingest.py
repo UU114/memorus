@@ -164,6 +164,7 @@ class IngestPipeline:
                     related_files=bullet.related_files,
                     tags=bullet.tags,
                     scope=bullet.scope,
+                    sources=list(bullet.sources),
                 )
                 mem0_meta = BulletFactory.to_mem0_metadata(bullet_meta)
                 merged_meta = {**(metadata or {}), **mem0_meta}
