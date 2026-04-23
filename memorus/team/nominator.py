@@ -18,6 +18,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from memorus.core.purpose import (
+    PoolPurpose,
+    cosine_similarity,
+    purpose_text_for_embedding,
+    tokenize,
+)
 from memorus.team.config import AutoNominateConfig
 from memorus.team.types import GovernanceTier
 
@@ -401,6 +407,98 @@ def _jaccard_similarity(a: str, b: str) -> float:
     if not words_a or not words_b:
         return 0.0
     return len(words_a & words_b) / len(words_a | words_b)
+
+
+# ---------------------------------------------------------------------------
+# Purpose-based nomination gate (STORY-R098)
+# ---------------------------------------------------------------------------
+
+
+def should_nominate(
+    bullet: Any,
+    team_purpose: PoolPurpose | None,
+    *,
+    embed_fn: Any | None = None,
+    threshold: float | None = None,
+) -> bool:
+    """Decide whether a local bullet is a plausible nomination for a team pool.
+
+    Computes ``cosine(bullet.embedding, embed(team_purpose.intent_body + keywords))``
+    and returns True iff the similarity is above ``threshold`` (defaulting to
+    ``team_purpose.nominate_threshold``, itself 0.6).
+
+    Fallbacks (never raises):
+      - ``team_purpose`` is None or empty → accept (True).
+      - ``bullet.embedding`` is missing AND no ``embed_fn`` is provided → fall
+        back to Unicode token overlap between bullet content and the purpose
+        (keywords ∪ intent_body tokens). Accept iff overlap >= threshold * half
+        of keywords, plus always accept on any keyword match.
+      - Embedding dimension mismatch → token-overlap fallback.
+
+    Args:
+        bullet: Either a dict with ``"content"`` / ``"embedding"`` keys, or an
+            object exposing the same attributes.
+        team_purpose: Target pool purpose.
+        embed_fn: Optional callable(str) -> list[float] to embed the purpose
+            on demand (avoids requiring callers to precompute it).
+        threshold: Optional override for ``team_purpose.nominate_threshold``.
+
+    Returns:
+        bool: True if the bullet is plausibly in-scope for the team purpose.
+    """
+    if team_purpose is None or team_purpose.is_empty():
+        # No purpose signal → do not block (preserve pre-R098 behavior).
+        return True
+
+    thr = threshold if threshold is not None else team_purpose.nominate_threshold
+
+    # Extract content and embedding from either a dict or an object.
+    if isinstance(bullet, dict):
+        content = str(bullet.get("content", ""))
+        bullet_emb = bullet.get("embedding")
+    else:
+        content = str(getattr(bullet, "content", ""))
+        bullet_emb = getattr(bullet, "embedding", None)
+
+    # Try embedding-based cosine similarity first.
+    if bullet_emb:
+        purpose_text = purpose_text_for_embedding(team_purpose)
+        purpose_emb: list[float] | None = None
+        if embed_fn is not None and purpose_text:
+            try:
+                purpose_emb = list(embed_fn(purpose_text))
+            except Exception as exc:  # pragma: no cover — defensive
+                logger.debug("purpose embedding failed, falling back: %s", exc)
+                purpose_emb = None
+
+        if purpose_emb and len(purpose_emb) == len(bullet_emb):
+            sim = cosine_similarity(list(bullet_emb), purpose_emb)
+            logger.debug(
+                "should_nominate: cosine=%.3f threshold=%.3f", sim, thr,
+            )
+            return sim >= thr
+
+    # Token-overlap fallback: accept if any keyword or intent token is hit.
+    content_tokens = tokenize(content)
+    if not content_tokens:
+        return False
+
+    # Keyword hit always wins.
+    for kw in team_purpose.keywords:
+        if tokenize(kw).issubset(content_tokens):
+            return True
+
+    # Fall back to intent-body token overlap ratio.
+    intent_tokens = tokenize(team_purpose.intent_body)
+    if not intent_tokens:
+        # No intent body + no keyword hit = reject.
+        return False
+    overlap = len(intent_tokens & content_tokens) / len(intent_tokens)
+    logger.debug(
+        "should_nominate: token-overlap fallback=%.3f threshold=%.3f",
+        overlap, thr,
+    )
+    return overlap >= thr
 
 
 # ---------------------------------------------------------------------------
