@@ -672,3 +672,194 @@ def import_memories(
     click.echo(f"  Imported: {result.get('imported', 0)}")
     click.echo(f"  Skipped:  {result.get('skipped', 0)}")
     click.echo(f"  Merged:   {result.get('merged', 0)}")
+
+
+# ---------------------------------------------------------------------------
+# purpose command group (STORY-R098)
+# ---------------------------------------------------------------------------
+
+
+@cli.group()
+def purpose() -> None:
+    """Manage pool-level Purpose (.ace/purpose.md)."""
+
+
+@purpose.command("show")
+@click.option(
+    "--scope",
+    type=click.Choice(["project", "global", "effective"]),
+    default="effective",
+    show_default=True,
+    help="Which purpose to display.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def purpose_show(scope: str, as_json: bool) -> None:
+    """Show the current purpose (project-local, global, or merged effective)."""
+    from memorus.core.purpose import (
+        load_pool_purpose,
+        load_purpose_file,
+        resolve_purpose_paths,
+    )
+
+    project_path, global_path = resolve_purpose_paths()
+    if scope == "project":
+        p = load_purpose_file(project_path)
+    elif scope == "global":
+        p = load_purpose_file(global_path)
+    else:
+        p = load_pool_purpose()
+
+    if p is None or p.is_empty():
+        if as_json:
+            click.echo(json.dumps({"scope": scope, "empty": True}))
+        else:
+            click.echo(f"No purpose defined for scope={scope}.")
+            click.echo(f"Project path: {project_path}")
+            click.echo(f"Global path:  {global_path}")
+        return
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "scope": p.scope,
+                    "keywords": p.keywords,
+                    "excluded_topics": p.excluded_topics,
+                    "intent_body": p.intent_body,
+                    "source_path": str(p.source_path) if p.source_path else None,
+                    "nominate_threshold": p.nominate_threshold,
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    click.echo(f"Scope:              {p.scope or '(unset)'}")
+    click.echo(f"Source:             {p.source_path or '(synthesized)'}")
+    click.echo(f"Keywords:           {', '.join(p.keywords) or '(none)'}")
+    click.echo(f"Excluded topics:    {', '.join(p.excluded_topics) or '(none)'}")
+    click.echo(f"Nominate threshold: {p.nominate_threshold:.2f}")
+    click.echo()
+    click.echo("Intent body:")
+    click.echo(p.intent_body or "(empty)")
+
+
+@purpose.command("init")
+@click.option(
+    "--scope",
+    type=click.Choice(["project", "global"]),
+    default="project",
+    show_default=True,
+    help="Target location for the new purpose.md.",
+)
+@click.option("--force", is_flag=True, help="Overwrite existing file.")
+@click.option(
+    "--name",
+    default=None,
+    help="Value to write into the YAML `scope:` field (defaults to the chosen scope).",
+)
+@click.pass_context
+def purpose_init(
+    ctx: click.Context, scope: str, force: bool, name: Optional[str]
+) -> None:
+    """Generate a template `.ace/purpose.md` at the chosen location."""
+    from memorus.core.purpose import purpose_template, resolve_purpose_paths
+
+    project_path, global_path = resolve_purpose_paths()
+    target = project_path if scope == "project" else global_path
+
+    if target.exists() and not force:
+        click.echo(f"Error: {target} already exists. Use --force to overwrite.", err=True)
+        ctx.exit(1)
+        return
+
+    scope_name = name or scope
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(purpose_template(scope_name), encoding="utf-8")
+    except OSError as exc:
+        click.echo(f"Error writing {target}: {exc}", err=True)
+        ctx.exit(1)
+        return
+
+    click.echo(f"Wrote purpose template to {target}")
+
+
+@purpose.command("check")
+@click.argument("bullet_id")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def purpose_check(ctx: click.Context, bullet_id: str, as_json: bool) -> None:
+    """Show how the current purpose would score a given bullet."""
+    from memorus.core.purpose import (
+        apply_purpose,
+        load_pool_purpose,
+        tokenize,
+    )
+
+    memory = _create_memory()
+    if memory is None:
+        ctx.exit(1)
+        return
+
+    # Best-effort bullet lookup: try common public APIs in order.
+    bullet: Optional[dict[str, Any]] = None
+    for method_name in ("get_bullet", "get_memory", "get"):
+        method = getattr(memory, method_name, None)
+        if callable(method):
+            try:
+                b = method(bullet_id)
+            except Exception:  # pragma: no cover
+                b = None
+            if b:
+                if isinstance(b, dict):
+                    bullet = b
+                else:
+                    bullet = {
+                        "content": getattr(b, "content", ""),
+                        "embedding": getattr(b, "embedding", None),
+                    }
+                break
+
+    if bullet is None:
+        click.echo(f"Error: Bullet {bullet_id!r} not found.", err=True)
+        ctx.exit(1)
+        return
+
+    purpose = load_pool_purpose()
+    content = str(bullet.get("content", ""))
+    base_score = float(bullet.get("instructivity_score", 50.0))
+    adjusted = apply_purpose(base_score, content, purpose)
+
+    content_tokens = tokenize(content)
+    keyword_hits = [
+        kw for kw in purpose.keywords if tokenize(kw).issubset(content_tokens)
+    ]
+    exclusion_hits = [
+        ex for ex in purpose.excluded_topics if tokenize(ex).issubset(content_tokens)
+    ]
+
+    if as_json:
+        click.echo(
+            json.dumps(
+                {
+                    "bullet_id": bullet_id,
+                    "base_score": base_score,
+                    "adjusted_score": adjusted,
+                    "keyword_hits": keyword_hits,
+                    "exclusion_hits": exclusion_hits,
+                    "purpose_empty": purpose.is_empty(),
+                },
+                indent=2,
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    click.echo(f"Bullet: {bullet_id}")
+    click.echo(f"Purpose source:  {purpose.source_path or '(none)'}")
+    click.echo(f"Base score:      {base_score:.2f}")
+    click.echo(f"Adjusted score:  {adjusted:.2f}")
+    click.echo(f"Keyword hits:    {', '.join(keyword_hits) or '(none)'}")
+    click.echo(f"Exclusion hits:  {', '.join(exclusion_hits) or '(none)'}")

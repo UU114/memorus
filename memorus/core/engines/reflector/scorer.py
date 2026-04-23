@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 
 from memorus.core.config import ReflectorConfig
+from memorus.core.purpose import PoolPurpose, apply_purpose
 from memorus.core.types import (
     BulletSection,
     DetectedPattern,
@@ -64,17 +65,39 @@ _ACTIONABLE_KEYWORDS = frozenset({
 
 
 class KnowledgeScorer:
-    """Score and classify DetectedPatterns into ScoredCandidates."""
+    """Score and classify DetectedPatterns into ScoredCandidates.
 
-    def __init__(self, config: Optional[ReflectorConfig] = None):
+    Accepts an optional :class:`PoolPurpose`; when provided, the raw score
+    is adjusted via :func:`apply_purpose` before threshold filtering so
+    excluded-topic matches can drop below ``min_score`` and be filtered out
+    while keyword matches are boosted.
+    """
+
+    def __init__(
+        self,
+        config: Optional[ReflectorConfig] = None,
+        purpose: Optional[PoolPurpose] = None,
+    ):
         self._config = config or ReflectorConfig()
         self._min_score = self._config.min_score
+        self._purpose = purpose
 
     def score(self, pattern: DetectedPattern) -> Optional[ScoredCandidate]:
         """Score a pattern. Returns None if below min_score threshold."""
         knowledge_type = self._classify_type(pattern)
         section = self._assign_section(pattern.content)
         score_val = self._compute_score(pattern)
+
+        # Apply purpose-driven adjustment BEFORE threshold filtering so
+        # excluded topics can actually get filtered out.
+        if self._purpose is not None and not self._purpose.is_empty():
+            adjusted = apply_purpose(score_val, pattern.content, self._purpose)
+            if adjusted != score_val:
+                logger.debug(
+                    "KnowledgeScorer: purpose adjusted score %.1f -> %.1f",
+                    score_val, adjusted,
+                )
+            score_val = adjusted
 
         logger.debug(
             "KnowledgeScorer: pattern=%s type=%s section=%s raw_score=%.1f min=%.1f",
