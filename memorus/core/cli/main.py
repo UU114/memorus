@@ -580,18 +580,37 @@ def conflicts(ctx: click.Context, as_json: bool, user_id: str | None) -> None:
     type=click.Choice(["json", "markdown"]),
     default="json",
     show_default=True,
-    help="Export format",
+    help="Export format (ignored with --team)",
 )
 @click.option("--scope", default=None, help="Only export memories with this scope")
 @click.option("--output", "-o", default=None, help="Write to file instead of stdout")
+@click.option(
+    "--team",
+    "team_mode",
+    is_flag=True,
+    default=False,
+    help="Export team playbook as .ace/playbook.jsonl + .ace/index.md",
+)
+@click.option(
+    "--out",
+    "out_dir",
+    default=None,
+    help="Output directory for --team mode (default: .ace/)",
+)
 @click.pass_context
 def export_memories(
     ctx: click.Context,
     fmt: str,
     scope: Optional[str],
     output: Optional[str],
+    team_mode: bool,
+    out_dir: Optional[str],
 ) -> None:
-    """Export memories to JSON or Markdown."""
+    """Export memories to JSON/Markdown or team playbook to .ace/."""
+    if team_mode:
+        _export_team(ctx, scope=scope, out_dir=out_dir)
+        return
+
     memory = _create_memory()
     if memory is None:
         ctx.exit(1)
@@ -620,6 +639,68 @@ def export_memories(
             ctx.exit(1)
     else:
         click.echo(text)
+
+
+def _export_team(
+    ctx: click.Context,
+    *,
+    scope: Optional[str],
+    out_dir: Optional[str],
+) -> None:
+    """Handle `memorus export --team`: generate .ace/index.md.
+
+    Reads bullets from an existing `.ace/playbook.jsonl` so the index is
+    always an exact reflection of the machine-readable playbook.
+    """
+    from pathlib import Path
+
+    from memorus.team.export import write_index_md
+    from memorus.team.git_storage import GitFallbackStorage
+
+    target_dir = Path(out_dir) if out_dir else Path(".ace")
+    playbook_path = target_dir / "playbook.jsonl"
+
+    storage = GitFallbackStorage(playbook_path=playbook_path)
+    # Force lazy load.
+    bullet_count = storage.bullet_count  # noqa: F841
+
+    bullets: list[dict[str, Any]] = []
+    for record in storage._bullets:  # internal: read-only use
+        item: dict[str, Any] = {
+            "content": record.content,
+            "section": record.section,
+            "tags": list(record.tags),
+            "knowledge_type": record.knowledge_type,
+            "decay_weight": record.extra.get("decay_weight", 1.0),
+            "recall_count": record.extra.get("recall_count", 0),
+            "created_at": record.extra.get("created_at", ""),
+        }
+        # Optional R092 source references — pass through if present.
+        for key in ("sources", "source_refs", "sources_count"):
+            if key in record.extra:
+                item[key] = record.extra[key]
+        bullets.append(item)
+
+    resolved_scope = scope or (
+        (storage.header or {}).get("scope", "") or "team"
+    )
+    header = storage.header or {}
+    model = header.get("model") or "all-MiniLM-L6-v2"
+    dim_val = header.get("dim")
+    try:
+        dim = int(dim_val) if dim_val is not None else 384
+    except (TypeError, ValueError):
+        dim = 384
+
+    target = write_index_md(
+        bullets,
+        resolved_scope,
+        target_dir,
+        generator=f"memorus {_memorus_pkg.__version__}",
+        embedding_model=model,
+        embedding_dim=dim,
+    )
+    click.echo(f"Wrote {target} ({len(bullets)} bullets)")
 
 
 # ---------------------------------------------------------------------------
