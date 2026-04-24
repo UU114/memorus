@@ -486,6 +486,148 @@ class Memory:
         result = detector.detect(existing)
         return result.conflicts
 
+    # ------------------------------------------------------------------
+    # STORY-R094: corpus consolidation
+    # ------------------------------------------------------------------
+
+    def consolidate_scan(
+        self,
+        max_per_pass: int = 5000,
+        *,
+        user_id: Optional[str] = None,
+    ) -> Any:
+        """Scan the entire corpus and return a ``ConsolidateResult``.
+
+        Loads all memories via mem0, turns them into ExistingBullet rows
+        with embeddings when available, and delegates to
+        ``CuratorEngine.consolidate_corpus``.
+        """
+        from memorus.core.engines.curator.engine import (
+            CuratorEngine,
+            ExistingBullet,
+        )
+
+        kwargs: dict[str, Any] = {}
+        if user_id:
+            kwargs["user_id"] = user_id
+        raw = self._ensure_mem0().get_all(**kwargs)
+        memories = raw.get("memories", []) if isinstance(raw, dict) else []
+
+        existing: list[ExistingBullet] = []
+        for mem in memories:
+            if not isinstance(mem, dict):
+                continue
+            meta = mem.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+            # Skip already soft-deleted bullets
+            if meta.get("deleted_at"):
+                continue
+            emb = meta.get("memorus_embedding") or meta.get("embedding")
+            if not (isinstance(emb, list) and all(
+                isinstance(x, (int, float)) for x in emb
+            )):
+                emb = None
+            existing.append(
+                ExistingBullet(
+                    bullet_id=mem.get("id", ""),
+                    content=mem.get("memory", ""),
+                    embedding=[float(x) for x in emb] if emb else None,
+                    scope=meta.get("memorus_scope", "global"),
+                    metadata=meta,
+                )
+            )
+
+        engine = CuratorEngine(self._config.curator)
+        return engine.consolidate_corpus(existing, max_per_pass=max_per_pass)
+
+    def build_consolidate_adapter(self) -> Any:
+        """Return a :class:`MemoryAdapter` bound to this Memory instance."""
+        from memorus.core.engines.curator.executor import (
+            BulletRecord,
+            MemoryAdapter,
+        )
+        from memorus.core.types import SourceRef
+
+        mem0 = self._ensure_mem0()
+
+        def _get_bullet(bid: str) -> Optional[BulletRecord]:
+            try:
+                raw_mem = mem0.get(bid)
+            except Exception:
+                return None
+            if not isinstance(raw_mem, dict):
+                return None
+            meta = raw_mem.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+            # Parse sources
+            src_raw = meta.get("sources", [])
+            sources: list[SourceRef] = []
+            if isinstance(src_raw, list):
+                for item in src_raw:
+                    if isinstance(item, SourceRef):
+                        sources.append(item)
+                    elif isinstance(item, dict):
+                        try:
+                            sources.append(SourceRef(**item))
+                        except Exception:
+                            continue
+            created_raw = meta.get("memorus_created_at") or meta.get(
+                "created_at"
+            )
+            created: Optional[datetime] = None
+            if isinstance(created_raw, str):
+                try:
+                    created = datetime.fromisoformat(created_raw)
+                except ValueError:
+                    created = None
+            recall = meta.get("memorus_recall_count", 0)
+            try:
+                recall_i = int(recall)
+            except (TypeError, ValueError):
+                recall_i = 0
+            return BulletRecord(
+                bullet_id=bid,
+                content=raw_mem.get("memory", ""),
+                recall_count=recall_i,
+                created_at=created,
+                sources=sources,
+                metadata=meta,
+            )
+
+        def _update_metadata(bid: str, patch: dict[str, Any]) -> None:
+            """Merge *patch* into the bullet's metadata (best effort)."""
+            try:
+                raw_mem = mem0.get(bid)
+            except Exception:
+                return
+            if not isinstance(raw_mem, dict):
+                return
+            meta = raw_mem.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+            meta.update(patch)
+            try:
+                # mem0 update(id, data_str) uses the existing content.
+                mem0.update(bid, raw_mem.get("memory", ""))
+            except Exception as exc:
+                logger.warning(
+                    "build_consolidate_adapter: update(%s) failed: %s",
+                    bid,
+                    exc,
+                )
+
+        def _mark_deleted(bid: str, when: datetime) -> None:
+            """Soft delete a bullet by tagging metadata with deleted_at."""
+            _update_metadata(bid, {"deleted_at": when.isoformat()})
+
+        return MemoryAdapter(
+            get_bullet=_get_bullet,
+            update_metadata=_update_metadata,
+            mark_deleted=_mark_deleted,
+        )
+
     def export(
         self,
         format: str = "json",
