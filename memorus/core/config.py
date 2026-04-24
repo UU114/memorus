@@ -110,6 +110,30 @@ class DaemonConfig(BaseModel):
     socket_path: Optional[str] = None
 
 
+class ConsolidateConflictConfig(BaseModel):
+    """Thresholds for the three-tier conflict triage in ConsolidateExecutor."""
+
+    auto_supersede_min_confidence: float = Field(default=0.85, ge=0.0, le=1.0)
+    review_queue_min_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+
+
+class ConsolidateConfig(BaseModel):
+    """IdleOrchestrator + ConsolidateExecutor configuration (STORY-R094).
+
+    Mirrors the Rust ``memorus_core::config::ConsolidateConfig``.
+    """
+
+    check_interval_secs: int = Field(default=600, gt=0)
+    min_idle_secs: int = Field(default=180, ge=0)
+    min_gap_secs: int = Field(default=1800, ge=0)
+    max_per_pass: int = Field(default=5000, gt=0)
+    log_path: str = ".ace/log.md"
+    review_queue_path: str = ".ace/review_queue.jsonl"
+    conflict: ConsolidateConflictConfig = Field(
+        default_factory=ConsolidateConflictConfig
+    )
+
+
 # ---------------------------------------------------------------------------
 # Top-level configuration
 # ---------------------------------------------------------------------------
@@ -131,6 +155,7 @@ class MemorusConfig(BaseModel):
     privacy: PrivacyConfig = Field(default_factory=PrivacyConfig)
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    consolidate: ConsolidateConfig = Field(default_factory=ConsolidateConfig)
     mem0_config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -166,6 +191,7 @@ class MemorusConfig(BaseModel):
             "privacy",
             "integration",
             "daemon",
+            "consolidate",
         }
         ace_fields: dict[str, Any] = {}
         mem0_fields: dict[str, Any] = {}

@@ -944,3 +944,191 @@ def purpose_check(ctx: click.Context, bullet_id: str, as_json: bool) -> None:
     click.echo(f"Adjusted score:  {adjusted:.2f}")
     click.echo(f"Keyword hits:    {', '.join(keyword_hits) or '(none)'}")
     click.echo(f"Exclusion hits:  {', '.join(exclusion_hits) or '(none)'}")
+
+
+# ---------------------------------------------------------------------------
+# consolidate command (STORY-R094)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("consolidate")
+@click.option("--now", "run_now", is_flag=True, help="Force-run a consolidate pass immediately.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def consolidate_cmd(ctx: click.Context, run_now: bool, as_json: bool) -> None:
+    """Run a corpus-wide consolidate pass (merge dedup, triage conflicts)."""
+    if not run_now:
+        click.echo(
+            "Usage: memorus consolidate --now\n"
+            "(The daemon runs consolidate automatically during idle.)"
+        )
+        return
+
+    memory = _create_memory()
+    if memory is None:
+        ctx.exit(1)
+        return
+
+    try:
+        from memorus.core.config import MemorusConfig
+        from memorus.core.daemon.orchestrator import (
+            IdleOrchestrator,
+            Mem0MemoryAdapter,
+        )
+        from memorus.core.engines.curator.engine import ExistingBullet
+
+        mcfg = getattr(memory, "_config", None)
+        if not isinstance(mcfg, MemorusConfig):
+            from memorus.core.config import MemorusConfig as _Cfg
+
+            mcfg = _Cfg()
+
+        def _load_bullets() -> list[ExistingBullet]:
+            raw = memory.get_all()
+            mems = raw.get("results") if isinstance(raw, dict) else []
+            if not mems:
+                mems = raw.get("memories", []) if isinstance(raw, dict) else []
+            out: list[ExistingBullet] = []
+            for m in mems or []:
+                if not isinstance(m, dict):
+                    continue
+                meta = m.get("metadata") or {}
+                if isinstance(meta, dict) and meta.get("memorus_deleted_at"):
+                    continue
+                out.append(
+                    ExistingBullet(
+                        bullet_id=m.get("id", ""),
+                        content=m.get("memory", m.get("content", "")),
+                        scope=meta.get("memorus_scope", "global")
+                        if isinstance(meta, dict)
+                        else "global",
+                        metadata=meta if isinstance(meta, dict) else {},
+                    )
+                )
+            return out
+
+        adapter = Mem0MemoryAdapter(memory)
+        orch = IdleOrchestrator(
+            config=mcfg.consolidate,
+            curator_config=mcfg.curator,
+            adapter=adapter,
+            load_bullets=_load_bullets,
+        )
+
+        import asyncio
+
+        report = asyncio.run(orch.run_once(force=True))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    if report is None:
+        click.echo("Error: consolidate produced no report.", err=True)
+        ctx.exit(1)
+        return
+
+    payload = {
+        "merged_groups": report.merged_groups,
+        "merged_bullets_total": report.merged_bullets_total,
+        "soft_deleted": report.soft_deleted,
+        "auto_supersede": report.auto_supersede,
+        "queued_for_review": report.queued_for_review,
+        "marked_conflict": report.marked_conflict,
+        "duration_seconds": round(report.duration_seconds, 3),
+        "errors": list(report.errors),
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+
+    click.echo("Consolidate complete.")
+    click.echo(
+        f"merged: {payload['merged_groups']} groups "
+        f"({payload['merged_bullets_total']} bullets -> {payload['merged_groups']})"
+    )
+    click.echo(f"soft-deleted: {payload['soft_deleted']}")
+    click.echo(f"auto-supersede: {payload['auto_supersede']}")
+    click.echo(f"queued-for-review: {payload['queued_for_review']}")
+    click.echo(f"marked-conflict: {payload['marked_conflict']}")
+    click.echo(f"duration: {payload['duration_seconds']:.1f}s")
+    if payload["errors"]:
+        click.echo(f"errors: {len(payload['errors'])}")
+
+
+# ---------------------------------------------------------------------------
+# review command group (STORY-R094)
+# ---------------------------------------------------------------------------
+
+
+@cli.group("review")
+@click.pass_context
+def review_group(ctx: click.Context) -> None:
+    """Inspect and process the consolidate review queue."""
+    ctx.ensure_object(dict)
+
+
+@review_group.command("list")
+@click.option(
+    "--path",
+    "queue_path",
+    default=None,
+    help="Path to review_queue.jsonl (defaults to config).",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def review_list(
+    ctx: click.Context,
+    queue_path: Optional[str],
+    as_json: bool,
+) -> None:
+    """List all entries in .ace/review_queue.jsonl."""
+    from pathlib import Path as _Path
+
+    if queue_path is None:
+        try:
+            from memorus.core.config import MemorusConfig
+
+            queue_path = MemorusConfig().consolidate.review_queue_path
+        except Exception:
+            queue_path = ".ace/review_queue.jsonl"
+    path = _Path(queue_path)
+
+    rows: list[dict[str, Any]] = []
+    if path.exists():
+        try:
+            with open(path, "r", encoding="utf-8") as fp:
+                for line in fp:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        rows.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+        except OSError as e:
+            click.echo(f"Error reading {path}: {e}", err=True)
+            ctx.exit(1)
+            return
+
+    if as_json:
+        click.echo(json.dumps(rows, indent=2, ensure_ascii=False))
+        return
+
+    if not rows:
+        click.echo(f"Review queue is empty. ({path})")
+        return
+
+    click.echo(f"Review queue ({len(rows)} entries) — {path}")
+    for i, row in enumerate(rows, 1):
+        click.echo(
+            f"[{i}] a_id={row.get('a_id')} b_id={row.get('b_id')} "
+            f"type={row.get('conflict_type')} confidence={row.get('confidence'):.2f}"
+            if isinstance(row.get("confidence"), (int, float))
+            else f"[{i}] a_id={row.get('a_id')} b_id={row.get('b_id')} "
+                 f"type={row.get('conflict_type')}"
+        )
+        if row.get("reason"):
+            click.echo(f"    reason: {row['reason']}")
+        if row.get("hint"):
+            click.echo(f"    hint: {row['hint']}")
