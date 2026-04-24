@@ -6,8 +6,10 @@
 version: "6.0.0"
 project_name: "Memorus"
 project_level: 3
-current_sprint: 4
+current_sprint: 5
 sprint_plan_path: "docs/sprint-plan-memorus-2026-02-27.md"
+# Sprint 5+ 同时维护 Python (memorus/) 与 Rust (memorus-r/) 双 workspace
+# Rust 侧详细计划见 docs/sprint-plan-memorus-r-2026-03-16.md
 
 sprints:
   - sprint_number: 1
@@ -369,12 +371,147 @@ sprints:
         story_doc: "docs/stories/STORY-046.md"
         notes: "v1.0.0打包，README/CHANGELOG/publish workflow，build+twine验证通过"
 
+  - sprint_number: 5
+    start_date: "2026-04-28"
+    end_date: "2026-05-09"
+    capacity_points: 63
+    committed_points: 78
+    completed_points: 78
+    status: "completed"
+    goal: "Knowledge Structure Evolution (EPIC-R017, Karpathy Memex 启发) — 双语言平行实现 Python + Rust"
+    notes: "每个 story 同时覆盖 memorus/ (Python) 与 memorus-r/ (Rust)。所有 7 个 story 由 subagent 并行/串行编排完成，单次 sprint 闭环。"
+    execution_summary:
+      python_tests_passing: 374
+      rust_tests_passing_per_crate:
+        memorus-core: 225
+        memorus-ace: 455
+        memorus-team: 323
+        memorus-cli: 42
+        memorus-providers: 142
+        memorus-server: 95
+      rust_tests_total: 1282
+      clippy_new_warnings: 0
+      orchestration_waves:
+        wave_1_parallel: ["R092", "R093", "R098"]
+        wave_2_parallel: ["R094", "R096"]
+        wave_3_serial: ["R095"]
+        wave_4_serial: ["R097"]
+      key_artifacts:
+        - ".ace/index.md (R093)"
+        - ".ace/playbook.jsonl + sources field (R092)"
+        - ".ace/inbox.jsonl (R095)"
+        - ".ace/log.md (R094)"
+        - ".ace/review_queue.jsonl (R094)"
+        - ".ace/pages/<slug>.md (R097)"
+        - ".ace/purpose.md (R098)"
+        - "SQLite bullet_edges table (R096)"
+        - "SQLite topic_pages table (R097)"
+    stories:
+      - story_id: "STORY-R092"
+        title: "Bullet Sources 层（可追溯原始对话）"
+        points: 8
+        status: "completed"
+        assigned_to: "subagent-a89b664e"
+        priority: "Must Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R092.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["c2dd829 merge", "57d7de2 feat"]
+          memorus_r: "c05ad6a (Wave 1 combined)"
+        tests: "Python 1833 pass / Rust core 225 + ace 385+15"
+      - story_id: "STORY-R093"
+        title: "Playbook 自动生成 .ace/index.md"
+        points: 5
+        status: "completed"
+        assigned_to: "subagent-aad7c067"
+        priority: "Should Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R093.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["2d54a7e merge", "a177275 feat", "78792b4 fix(decoupling)"]
+          memorus_r: "c05ad6a (Wave 1 combined)"
+        tests: "Python 24/24 new + byte-identical cross-lang"
+        notes: "post-merge decoupling fix: _export_team moved to memorus/ext/team_export.py"
+      - story_id: "STORY-R094"
+        title: "Idle Orchestrator + Consolidate 调度"
+        points: 13
+        status: "completed"
+        assigned_to: "subagent-aeb2207b"
+        priority: "Must Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R094.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["3ad566b merge", "db29c75 feat", "194904a fixup (memory.consolidate_scan)"]
+          memorus_r: "<Wave 2 commit on memorus-r master>"
+        tests: "Python 34 new + 275 regression / Rust 406 ace"
+        notes: "Conflict confidence (Negation/Contradiction/ValueDifference at sim=0.8) byte-identical Python↔Rust"
+      - story_id: "STORY-R095"
+        title: "Inbox + 延迟批量蒸馏（两步 Analyze→Generate）"
+        points: 13
+        status: "completed"
+        assigned_to: "subagent-ae3fcca7"
+        priority: "Should Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R095.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["289367e merge", "1fdc414 feat"]
+          memorus_r: "<Wave 3 commit on memorus-r master>"
+        tests: "Python 25 unit + 1 benchmark + 103 regression / Rust 424 ace + 42 cli"
+        notes: "Token benchmark: batch 85.4 tok/turn vs single-turn 558.3 → ratio 0.153 (spec ≤ 0.60)"
+      - story_id: "STORY-R096"
+        title: "Generator 图谱信号扩展（supersedes/co-recall/derived-from）"
+        points: 10
+        status: "completed"
+        assigned_to: "subagent-a54a22c6"
+        priority: "Should Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R096.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["01e35c2 merge", "245b099 feat"]
+          memorus_r: "<Wave 2 commit on memorus-r master>"
+        tests: "Python 64 new (edges 38, graph 26) + 293 regression / Rust 406 ace + 142 providers (30 edges)"
+        notes: "Cross-language Adamic-Adar parity to float precision (Python 0.9102392266268373 ↔ Rust fixture)"
+      - story_id: "STORY-R097"
+        title: "Topic Page 主题聚合层（Wiki 页面）"
+        points: 21
+        status: "completed"
+        assigned_to: "subagent-aa7089af"
+        priority: "Could Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R097.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["162918f merge", "545327f feat"]
+          memorus_r: "<Wave 4 commit on memorus-r master>"
+        tests: "Python 36 new (clusterer 12, summarizer 8, store 12, topic match 4) / Rust 455 ace (31 new topic) + 42 cli"
+        notes: "Cross-language source_hash parity: sha256([\"a\",\"b\"])[:16] == 0473ef2dc0d324ab. Clustering 1000 bullets ~0.02s"
+      - story_id: "STORY-R098"
+        title: "Pool Purpose 意图驱动的蒸馏"
+        points: 8
+        status: "completed"
+        assigned_to: "subagent-a0bb5a4b"
+        priority: "Could Have"
+        epic: "EPIC-R017"
+        story_doc: "docs/stories/STORY-R098.md"
+        completion_date: "2026-04-23"
+        commits:
+          parent_repo: ["db89a33 merge", "0d649c4 feat"]
+          memorus_r: "c05ad6a (Wave 1 combined)"
+        tests: "Python 39/39 + 84 regression / Rust core 550 + team 68 + cli 36"
+        notes: "Cross-language apply_purpose score parity at 3-decimal precision"
+
 velocity:
   sprint_1: 60
   sprint_2: 62
   sprint_3: 56
   sprint_4: 22
-  rolling_average: 50
+  sprint_5: 78
+  rolling_average: 56
 
 team:
   size: 4
