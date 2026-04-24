@@ -1140,6 +1140,209 @@ def inbox_status_cmd(ctx: click.Context, as_json: bool) -> None:
     click.echo(f"  total entries:      {counts['total']}")
 
 
+@cli.group("topics")
+@click.pass_context
+def topics_group(ctx: click.Context) -> None:
+    """Inspect and drive the TopicPage aggregation layer (STORY-R097)."""
+    ctx.ensure_object(dict)
+
+
+def _resolve_topics_config() -> Any:
+    from memorus.core.config import MemorusConfig
+
+    return MemorusConfig().topics
+
+
+def _open_topic_store(sqlite_path: Optional[str], pages_dir: Optional[str]) -> Any:
+    from memorus.core.engines.topic.store import SqliteTopicStore
+
+    cfg = _resolve_topics_config()
+    return SqliteTopicStore(
+        sqlite_path or cfg.sqlite_path,
+        pages_dir or cfg.pages_dir,
+    )
+
+
+@topics_group.command("list")
+@click.option("--sqlite", "sqlite_path", default=None, help="Override sqlite_path")
+@click.option("--pages-dir", "pages_dir", default=None, help="Override pages_dir")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def topics_list_cmd(
+    ctx: click.Context,
+    sqlite_path: Optional[str],
+    pages_dir: Optional[str],
+    as_json: bool,
+) -> None:
+    """List every persisted TopicPage with bullet counts."""
+    try:
+        store = _open_topic_store(sqlite_path, pages_dir)
+        pages = store.list_all()
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    if as_json:
+        click.echo(json.dumps(
+            [
+                {
+                    "id": p.id,
+                    "slug": p.slug,
+                    "title": p.title,
+                    "bullet_count": len(p.bullet_ids),
+                    "source_hash": p.source_hash,
+                    "model_hash": p.model_hash,
+                    "updated_at": p.updated_at.isoformat(),
+                }
+                for p in pages
+            ],
+            indent=2,
+            ensure_ascii=False,
+        ))
+        return
+
+    if not pages:
+        click.echo("No topic pages yet. Run `memorus topics regen` to build them.")
+        return
+    click.echo(f"Topic pages ({len(pages)})")
+    for p in pages:
+        click.echo(
+            f"  {p.slug:<40} {len(p.bullet_ids):>3} bullets  {p.title}"
+        )
+
+
+@topics_group.command("show")
+@click.argument("slug")
+@click.option("--sqlite", "sqlite_path", default=None, help="Override sqlite_path")
+@click.option("--pages-dir", "pages_dir", default=None, help="Override pages_dir")
+@click.pass_context
+def topics_show_cmd(
+    ctx: click.Context,
+    slug: str,
+    sqlite_path: Optional[str],
+    pages_dir: Optional[str],
+) -> None:
+    """Print the markdown body of the named topic page."""
+    from memorus.core.engines.topic.store import render_markdown
+
+    try:
+        store = _open_topic_store(sqlite_path, pages_dir)
+        page = store.get_by_slug(slug)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    if page is None:
+        click.echo(f"No topic page found for slug '{slug}'.", err=True)
+        ctx.exit(1)
+        return
+
+    # Prefer the disk file if present — it is the rendered canonical body.
+    md_path = store.md_path(page.slug)
+    if md_path.exists():
+        click.echo(md_path.read_text(encoding="utf-8"))
+    else:
+        click.echo(render_markdown(page, {}, []))
+
+
+@topics_group.command("regen")
+@click.option("--force", is_flag=True, help="Regenerate every page even if unchanged.")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def topics_regen_cmd(
+    ctx: click.Context,
+    force: bool,
+    as_json: bool,
+) -> None:
+    """Force a TopicEngine pass against the current corpus."""
+    memory = _create_memory()
+    if memory is None:
+        ctx.exit(1)
+        return
+
+    try:
+        from memorus.core.config import MemorusConfig
+        from memorus.core.engines.topic.clusterer import BulletNode, TopicClusterer
+        from memorus.core.engines.topic.engine import TopicEngine
+        from memorus.core.engines.topic.store import SqliteTopicStore
+        from memorus.core.engines.topic.summarizer import LLMSummarizer
+
+        mcfg = getattr(memory, "_config", None)
+        if not isinstance(mcfg, MemorusConfig):
+            mcfg = MemorusConfig()
+        tcfg = mcfg.topics
+
+        # Load existing bullets — best-effort via the public list endpoint.
+        bullets: list[BulletNode] = []
+        try:
+            listed = memory.list(limit=10000)
+            raw_items = listed.get("results", []) if isinstance(listed, dict) else listed
+        except Exception as e:
+            click.echo(f"warn: bullet list failed: {e}", err=True)
+            raw_items = []
+        for item in raw_items or []:
+            if not isinstance(item, dict):
+                continue
+            bid = item.get("id") or item.get("memorus_id")
+            if not bid:
+                continue
+            content = item.get("memory") or item.get("content") or ""
+            meta = item.get("metadata") or {}
+            bullets.append(BulletNode(
+                bullet_id=str(bid),
+                content=str(content),
+                decay_weight=float(meta.get("memorus_decay_weight", 1.0)),
+                archived=bool(meta.get("memorus_archived", False)),
+            ))
+
+        store = SqliteTopicStore(tcfg.sqlite_path, tcfg.pages_dir)
+        clusterer = TopicClusterer(
+            min_cluster_size=tcfg.min_cluster_size,
+            similarity_edge_threshold=tcfg.similarity_edge_threshold,
+        )
+        summarizer = LLMSummarizer(
+            model=tcfg.llm_model,
+            max_tokens=tcfg.page_summary_max_tokens,
+        )
+        # Force opt-in so `regen --force` works even if enabled=False.
+        effective_cfg = tcfg.model_copy(update={"enabled": True})
+        engine = TopicEngine(
+            effective_cfg,
+            clusterer=clusterer,
+            summarizer=summarizer,
+            store=store,
+            load_bullets=lambda: bullets,
+        )
+        report = engine.run(force=force)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    payload = {
+        "clusters_found": report.clusters_found,
+        "pages_created": report.pages_created,
+        "pages_updated": report.pages_updated,
+        "pages_unchanged": report.pages_unchanged,
+        "orphan_candidates": report.orphan_candidates,
+        "llm_calls": report.llm_calls,
+        "fallback_calls": report.fallback_calls,
+        "duration_seconds": round(report.duration_seconds, 3),
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+    click.echo(
+        f"TopicEngine: {payload['clusters_found']} cluster(s) → "
+        f"{payload['pages_created']} new, {payload['pages_updated']} updated, "
+        f"{payload['pages_unchanged']} unchanged "
+        f"(llm={payload['llm_calls']} fallback={payload['fallback_calls']}, "
+        f"{payload['duration_seconds']}s)"
+    )
+
+
 @inbox_group.command("flush")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.pass_context

@@ -89,6 +89,8 @@ class GeneratorEngine:
         vector_searcher: VectorSearcher | None = None,
         inbox: Any | None = None,
         provisional_score_factor: float = 0.5,
+        topic_store: Any | None = None,
+        topics_config: Any | None = None,
     ) -> None:
         self._config = config or RetrievalConfig()
         self._exact_matcher = ExactMatcher()
@@ -101,6 +103,9 @@ class GeneratorEngine:
         # STORY-R095 — optional inbox used for provisional search hits
         self._inbox = inbox
         self._provisional_factor = max(0.0, min(1.0, float(provisional_score_factor)))
+        # STORY-R097 — optional TopicPage store for Stage A topic match
+        self._topic_store = topic_store
+        self._topics_config = topics_config
 
     # ------------------------------------------------------------------
     # Public API
@@ -135,6 +140,11 @@ class GeneratorEngine:
         """
         if not query or not bullets:
             return []
+
+        # -- STORY-R097 Stage A: TopicPage match (opt-in) --------------------
+        topic_hit = self._try_topic_match(query, bullets, limit)
+        if topic_hit is not None:
+            return topic_hit
 
         # Scope filtering: keep only bullets matching the target scope or "global"
         if scope:
@@ -347,6 +357,152 @@ class GeneratorEngine:
         except Exception as e:
             logger.warning("L4 VectorSearcher failed: %s", e)
             return []
+
+    # ------------------------------------------------------------------
+    # Topic-match Stage A (STORY-R097)
+    # ------------------------------------------------------------------
+
+    def _try_topic_match(
+        self,
+        query: str,
+        bullets: list[BulletForSearch],
+        limit: int,
+    ) -> list[ScoredBullet] | None:
+        """Return topic-matched results, or ``None`` if Stage A declines.
+
+        Stage A is a short-circuit: if any persisted :class:`TopicPage`
+        scores above ``topics.topic_match_threshold`` against *query* and
+        its backing bullets score well, we skip the bullet-level path and
+        return a composite result. If no config/store is attached, or the
+        threshold is not met, this returns ``None`` and Stage B (the
+        existing bullet path) takes over — guaranteeing byte-identical
+        behaviour when ``topics.enabled=False``.
+        """
+        cfg = self._topics_config
+        store = self._topic_store
+        if cfg is None or store is None:
+            return None
+        if not getattr(cfg, "enabled", False):
+            return None
+
+        try:
+            pages = store.list_all()
+        except Exception as e:  # defensive — never let topic lookup break search
+            logger.warning("GeneratorEngine: topic store list failed: %s", e)
+            return None
+        if not pages:
+            return None
+
+        # Score pages by exact+fuzzy match on their title + summary.
+        try:
+            combined = [
+                f"{p.title}\n{p.summary}" for p in pages
+            ]
+            exact = self._exact_matcher.match_batch(query, combined)
+            fuzzy = self._fuzzy_matcher.match_batch(query, combined)
+        except Exception as e:
+            logger.warning("GeneratorEngine: topic scoring failed: %s", e)
+            return None
+
+        # Normalise — same rough scale as the bullet pipeline (/70 as a
+        # conservative cap on exact+fuzzy sum).
+        ranked: list[tuple[Any, float]] = []
+        for p, e_r, f_r in zip(pages, exact, fuzzy):
+            raw = float(e_r.score) + float(f_r.score)
+            normalised = min(1.0, raw / 70.0)
+            ranked.append((p, normalised))
+        ranked.sort(key=lambda t: t[1], reverse=True)
+
+        top_page, top_score = ranked[0]
+        threshold = float(getattr(cfg, "topic_match_threshold", 0.65))
+        if top_score < threshold:
+            return None
+
+        # Compose backing bullets — find the subset of *bullets* that
+        # belong to the matched page and score them via the existing path.
+        id_set = set(top_page.bullet_ids)
+        backing = [b for b in bullets if b.bullet_id in id_set]
+        if not backing:
+            return None
+
+        # Score backing bullets through the ordinary hybrid pipeline so the
+        # top backing score can be combined with the page score.
+        try:
+            scored_backing = self._score_bullets(query, backing, limit=3)
+        except Exception as e:
+            logger.warning("GeneratorEngine: backing scoring failed: %s", e)
+            return None
+
+        backing_max = scored_backing[0].final_score if scored_backing else 0.0
+
+        page_weight = float(getattr(cfg, "page_score_weight", 0.7))
+        backing_weight = float(getattr(cfg, "backing_score_weight", 0.3))
+
+        final = page_weight * top_score + backing_weight * backing_max
+
+        # Build a synthetic ScoredBullet representing the TopicPage itself.
+        md: dict[str, Any] = {
+            "topic_page": True,
+            "topic_id": top_page.id,
+            "topic_slug": top_page.slug,
+            "title": top_page.title,
+            "bullet_ids": list(top_page.bullet_ids),
+            "backing_count": len(scored_backing),
+        }
+        head = ScoredBullet(
+            bullet_id=f"topic:{top_page.id}",
+            content=top_page.summary,
+            final_score=final,
+            keyword_score=top_score,
+            semantic_score=0.0,
+            decay_weight=1.0,
+            recency_boost=1.0,
+            metadata=md,
+        )
+
+        results: list[ScoredBullet] = [head]
+        # Include up to 3 backing bullets beneath the topic head.
+        for sb in scored_backing[:3]:
+            results.append(sb)
+        return results[:limit]
+
+    def _score_bullets(
+        self,
+        query: str,
+        bullets: list[BulletForSearch],
+        limit: int,
+    ) -> list[ScoredBullet]:
+        """Run the hybrid pipeline over an explicit bullet list (no topic match).
+
+        Used internally by :meth:`_try_topic_match` to score the backing
+        bullets of a matched TopicPage without recursing back into Stage A.
+        """
+        if not bullets:
+            return []
+
+        contents = [b.content for b in bullets]
+        l1 = self._run_l1(query, contents)
+        l2 = self._run_l2(query, contents)
+        l3 = self._run_l3(query, bullets)
+
+        keyword_results = {
+            b.bullet_id: l1[i] + l2[i] + l3[i] for i, b in enumerate(bullets)
+        }
+        bullet_infos: dict[str, BulletInfo] = {
+            b.bullet_id: BulletInfo(
+                bullet_id=b.bullet_id,
+                content=b.content,
+                created_at=b.created_at,
+                decay_weight=b.decay_weight,
+                scope=b.scope,
+                metadata=dict(b.extra),
+            )
+            for b in bullets
+        }
+        scored = self._score_merger.merge(
+            keyword_results, None, bullet_infos,
+        )
+        return scored[:limit]
 
     # ------------------------------------------------------------------
     # Provisional search (STORY-R095)

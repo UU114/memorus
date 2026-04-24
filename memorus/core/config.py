@@ -195,6 +195,27 @@ class ConsolidateConfig(BaseModel):
     )
 
 
+class TopicsConfig(BaseModel):
+    """TopicPage aggregation layer configuration (STORY-R097).
+
+    Opt-in — defaults keep the Generator byte-identical to its pre-R097
+    behaviour. Mirrors the Rust ``memorus_core::config::TopicsConfig``.
+    """
+
+    enabled: bool = False
+    min_cluster_size: int = Field(default=3, ge=1)
+    similarity_edge_threshold: float = Field(default=0.6, ge=0.0, le=1.0)
+    page_summary_max_tokens: int = Field(default=800, gt=0)
+    page_regen_drift_threshold: float = Field(default=0.20, ge=0.0, le=1.0)
+    topic_match_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
+    llm_model: str = "gpt-4o-mini"
+    sqlite_path: str = ".ace/topics.db"
+    pages_dir: str = ".ace/pages"
+    # Weight split applied when a topic hit wins over the bullet path.
+    page_score_weight: float = Field(default=0.7, ge=0.0, le=1.0)
+    backing_score_weight: float = Field(default=0.3, ge=0.0, le=1.0)
+
+
 # ---------------------------------------------------------------------------
 # Top-level configuration
 # ---------------------------------------------------------------------------
@@ -217,6 +238,7 @@ class MemorusConfig(BaseModel):
     integration: IntegrationConfig = Field(default_factory=IntegrationConfig)
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     consolidate: ConsolidateConfig = Field(default_factory=ConsolidateConfig)
+    topics: TopicsConfig = Field(default_factory=TopicsConfig)
     mem0_config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -253,6 +275,7 @@ class MemorusConfig(BaseModel):
             "integration",
             "daemon",
             "consolidate",
+            "topics",
         }
         ace_fields: dict[str, Any] = {}
         mem0_fields: dict[str, Any] = {}
