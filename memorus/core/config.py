@@ -73,6 +73,24 @@ class DecayConfig(BaseModel):
     sweep_on_session_end: bool = True
 
 
+class GraphExpansionConfig(BaseModel):
+    """Configuration for Generator graph-aware retrieval (STORY-R096).
+
+    Mirrors ``memorus_core::config::GraphExpansionConfig`` on the Rust side so
+    TOML files can be shared. When ``enabled`` is ``False`` the Generator
+    behaves byte-identically to its pre-R096 form.
+    """
+
+    enabled: bool = True
+    expand_hops: int = Field(default=1, ge=1, le=2)
+    k_expand: int = Field(default=5, ge=0)
+    graph_score_weight: float = Field(default=0.3, ge=0.0)
+    co_recall_delta: float = Field(default=0.1, ge=0.0, le=1.0)
+    co_recall_max_weight: float = Field(default=1.0, ge=0.0, le=1.0)
+    # Consumed by R094's IdleOrchestrator; Generator never schedules decay.
+    monthly_decay_factor: float = Field(default=0.95, ge=0.0, le=1.0)
+
+
 class RetrievalConfig(BaseModel):
     """Configuration for search / retrieval scoring."""
 
@@ -83,6 +101,7 @@ class RetrievalConfig(BaseModel):
     scope_boost: float = Field(default=1.3, ge=1.0)
     max_results: int = Field(default=5, gt=0)
     token_budget: int = Field(default=2000, gt=0)
+    graph_expansion: GraphExpansionConfig = Field(default_factory=GraphExpansionConfig)
 
 
 class PrivacyConfig(BaseModel):
