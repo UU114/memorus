@@ -165,6 +165,10 @@ class IngestPipeline:
                     tags=bullet.tags,
                     scope=bullet.scope,
                     sources=list(bullet.sources),
+                    # STORY-R100 — propagate distiller-extracted anchors into
+                    # the persisted metadata so the Verifier (R101) can read
+                    # them later during retrieval.
+                    anchors=list(getattr(bullet, "anchors", []) or []),
                 )
                 mem0_meta = BulletFactory.to_mem0_metadata(bullet_meta)
                 merged_meta = {**(metadata or {}), **mem0_meta}

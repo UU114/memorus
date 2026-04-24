@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from memorus.core.config import ReflectorConfig
+from memorus.core.config import ReflectorConfig, VerificationConfig
 from memorus.core.engines.reflector.detector import PatternDetector
 from memorus.core.engines.reflector.distiller import BulletDistiller
 from memorus.core.engines.reflector.inbox import Inbox
@@ -52,12 +52,17 @@ class ReflectorEngine:
         config: Optional[ReflectorConfig] = None,
         sanitizer: Optional[PrivacySanitizer] = None,
         inbox: Optional[Inbox] = None,
+        verification: Optional[VerificationConfig] = None,
     ) -> None:
         self._config = config or ReflectorConfig()
         self._detector = PatternDetector()
         self._scorer = KnowledgeScorer(self._config)
         self._sanitizer = sanitizer or PrivacySanitizer()
-        self._distiller = BulletDistiller(self._config)
+        # STORY-R100 — ``verification`` carries the ``project_root`` that
+        # the distiller uses to resolve anchor paths. ``None`` triggers an
+        # auto-resolve from cwd at distill time.
+        self._distiller = BulletDistiller(self._config, verification=verification)
+        self._verification = verification
         self._mode = self._config.mode
 
         # Lazy-init LLM components (only when needed)

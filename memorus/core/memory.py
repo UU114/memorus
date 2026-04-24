@@ -131,6 +131,7 @@ class Memory:
             reflector = ReflectorEngine(
                 config=self._config.reflector,
                 sanitizer=self._sanitizer,
+                verification=self._config.verification,
             )
 
             # Optional Curator engine for deduplication

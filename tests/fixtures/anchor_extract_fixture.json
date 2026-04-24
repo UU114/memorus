@@ -1,0 +1,12 @@
+{
+  "_comment": "STORY-R100 cross-language fixture. Python and Rust distillers must produce the same anchor file_path set when fed this input.",
+  "files": {
+    "src/foo.rs": "use std::net::TcpStream;\n\nfn connect(addr: &str) -> std::io::Result<TcpStream> {\n    TcpStream::connect(addr)\n}\n",
+    "src/bar.py": "def bar(x):\n    return x + 1\n"
+  },
+  "input": {
+    "bullet_content": "connect() in src/foo.rs uses TcpStream and bar() in src/bar.py adds one",
+    "assistant_message": "Code reference for src/foo.rs:\n```rust\nfn connect(addr: &str) -> std::io::Result<TcpStream> {\n    TcpStream::connect(addr)\n}\n```\nAnd src/bar.py:\n```python\ndef bar(x):\n    return x + 1\n```"
+  },
+  "expected_file_paths": ["src/foo.rs", "src/bar.py"]
+}

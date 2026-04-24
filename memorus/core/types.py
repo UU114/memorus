@@ -230,6 +230,9 @@ class CandidateBullet(BaseModel):
     tags: list[str] = Field(default_factory=list)
     scope: str = "global"
     sources: list[SourceRef] = Field(default_factory=list)
+    # STORY-R100 — anchors captured at ingest time by ``BulletDistiller``.
+    # Default ``[]`` (not None) so callers can iterate unconditionally.
+    anchors: list[Anchor] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
