@@ -22,9 +22,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from memorus.core.config import RetrievalConfig
+from memorus.core.config import GraphExpansionConfig, RetrievalConfig
+from memorus.core.engines.generator import graph as graph_mod
 from memorus.core.engines.generator.exact_matcher import ExactMatcher
 from memorus.core.engines.generator.fuzzy_matcher import FuzzyMatcher
+from memorus.core.engines.generator.graph import EdgeProvider, GraphNeighbor
 from memorus.core.engines.generator.metadata_matcher import MetadataInfo, MetadataMatcher
 from memorus.core.engines.generator.score_merger import BulletInfo, ScoredBullet, ScoreMerger
 from memorus.core.engines.generator.vector_searcher import VectorSearcher
@@ -202,6 +204,79 @@ class GeneratorEngine:
         )
 
         return scored[:limit]
+
+    def search_with_graph(
+        self,
+        query: str,
+        bullets: list[BulletForSearch],
+        edges: EdgeProvider,
+        graph_config: GraphExpansionConfig | None = None,
+        limit: int = 20,
+        filters: dict[str, Any] | None = None,
+        scope: str | None = None,
+        now: datetime | None = None,
+    ) -> list[ScoredBullet]:
+        """Run hybrid retrieval + graph-aware 1-hop expansion (STORY-R096).
+
+        When ``graph_config.enabled`` is ``False`` this method is
+        byte-identical to :meth:`search` — no edge reads, no new neighbors,
+        no re-sort.
+
+        When enabled, the base top-K is expanded 1 hop over *edges* using
+        weighted Adamic-Adar. The final score of each bullet becomes
+        ``base_score + graph_score_weight * graph_score``. New neighbors
+        not already in the base top-K are pulled in via *bullets*
+        (matched by ``bullet_id``) and inserted with ``base_score = 0``.
+
+        Callers are responsible for recording co-recall edges after the
+        fact (via :func:`memorus.core.storage.edges.record_co_recall`).
+        """
+        cfg = graph_config or GraphExpansionConfig()
+        base = self.search(
+            query, bullets, limit=limit, filters=filters, scope=scope, now=now,
+        )
+
+        if not cfg.enabled or not base:
+            return base
+
+        # Build an id -> BulletForSearch lookup for pulling in new neighbors.
+        by_id: dict[str, BulletForSearch] = {b.bullet_id: b for b in bullets}
+
+        seeds: list[tuple[str, float]] = [(sb.bullet_id, sb.final_score) for sb in base]
+
+        neighbors: list[GraphNeighbor] = graph_mod.expand_neighbors(
+            seeds,
+            edges,
+            cfg.k_expand,
+            exclude_ids={sid for sid, _ in seeds},
+        )
+
+        if not neighbors:
+            return base
+
+        # Boost scores of bullets already in base.
+        boosted = graph_mod.apply_graph_scores(base, neighbors, cfg.graph_score_weight)
+
+        # Append genuinely-new neighbors (those not in base).
+        existing_ids = {sb.bullet_id for sb in boosted}
+        for n in neighbors:
+            if n.bullet_id in existing_ids:
+                continue
+            src = by_id.get(n.bullet_id)
+            if src is None:
+                continue
+            stub = graph_mod.scored_bullet_for_new_neighbor(
+                bullet_id=n.bullet_id,
+                content=src.content,
+                graph_score=n.graph_score,
+                graph_score_weight=cfg.graph_score_weight,
+                decay_weight=src.decay_weight,
+                metadata=dict(src.extra),
+            )
+            boosted.append(stub)
+
+        boosted.sort(key=lambda sb: sb.final_score, reverse=True)
+        return boosted[:limit]
 
     @property
     def mode(self) -> str:

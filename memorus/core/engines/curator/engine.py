@@ -10,9 +10,13 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from memorus.core.config import CuratorConfig
 from memorus.core.types import CandidateBullet
+
+if TYPE_CHECKING:  # pragma: no cover - import cycle guard
+    from memorus.core.storage.edges import BulletEdge, SqliteEdgeStore
 
 logger = logging.getLogger(__name__)
 
@@ -510,3 +514,63 @@ def _detect_bullet_conflicts(
             )
         )
     return conflicts
+
+
+# ---------------------------------------------------------------------------
+# Supersede edge hook (STORY-R096)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SupersedeRecord:
+    """Describe a single Supersede action for edge-recording purposes.
+
+    Kept intentionally decoupled from the Curator's internal ``MergeCandidate``
+    so the record can be emitted by either the inline curate flow OR by
+    R094's Idle Orchestrator Curator executor. Callers persist the edge via
+    :func:`memorus.core.storage.edges.write_supersedes_edge`.
+    """
+
+    existing_id: str  # ID of the bullet being replaced (the "old" one)
+    new_id: str  # ID of the new/merged bullet that replaces it
+
+
+def supersedes_from_merges(
+    merges: list[MergeCandidate],
+    new_ids: dict[str, str],
+) -> list[SupersedeRecord]:
+    """Build :class:`SupersedeRecord`s from a Curator ``to_merge`` list.
+
+    *new_ids* maps each existing bullet ID to its replacement ID. Entries
+    whose ``existing_id == new_id`` are dropped (they would become self-loops
+    in the edge graph).
+    """
+    records: list[SupersedeRecord] = []
+    for m in merges:
+        existing_id = m.existing.bullet_id
+        new_id = new_ids.get(existing_id)
+        if not new_id or new_id == existing_id:
+            continue
+        records.append(SupersedeRecord(existing_id=existing_id, new_id=new_id))
+    return records
+
+
+def persist_supersedes(
+    store: "SqliteEdgeStore",
+    records: list[SupersedeRecord],
+) -> list["BulletEdge"]:
+    """Persist every :class:`SupersedeRecord` into *store*.
+
+    Returns the list of written edges (excluding no-ops). Uses the pure
+    :func:`memorus.core.storage.edges.write_supersedes_edge` helper so
+    R094's executor can share the same code path without coupling to this
+    module.
+    """
+    from memorus.core.storage.edges import write_supersedes_edge
+
+    written: list[BulletEdge] = []
+    for r in records:
+        edge = write_supersedes_edge(store, r.existing_id, r.new_id)
+        if edge is not None:
+            written.append(edge)
+    return written
