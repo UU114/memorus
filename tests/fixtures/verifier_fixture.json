@@ -1,0 +1,85 @@
+{
+  "_comment": "Cross-language parity fixture for STORY-R101 VerificationEngine (Python) and FileSystemVerifier (Rust). Both sides materialize the file_tree into a temp project_root, run verify_many on the bullets, and assert identical (verified_status, trust_score) pairs per bullet. The expected[] entries are keyed to bullets[] by index.",
+  "config": {
+    "enabled": true,
+    "ttl_seconds": 60,
+    "verified_trust_score": 1.0,
+    "stale_trust_score": 0.3,
+    "unverifiable_trust_score": 0.7,
+    "policy": "flag"
+  },
+  "file_tree": {
+    "src/handlers/router.rs": "// router.rs\nfn handle_request(req: Request) -> Response {\n    todo!()\n}\n",
+    "src/future.rs": "// future\nfn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) {}\n",
+    "src/utils.rs": "// utils (intentionally does NOT contain the stale anchor text)\nfn unrelated() {}\n"
+  },
+  "bullets": [
+    {
+      "_label": "verified_router_anchor",
+      "anchors": [
+        {
+          "file_path": "src/handlers/router.rs",
+          "anchor_text": "fn handle_request(req: Request) -> Response",
+          "anchor_hash_source": "fn handle_request(req: Request) -> Response"
+        }
+      ]
+    },
+    {
+      "_label": "verified_future_anchor",
+      "anchors": [
+        {
+          "file_path": "src/future.rs",
+          "anchor_text": "fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>)",
+          "anchor_hash_source": "fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>)"
+        }
+      ]
+    },
+    {
+      "_label": "stale_missing_text",
+      "anchors": [
+        {
+          "file_path": "src/utils.rs",
+          "anchor_text": "fn deprecated_symbol()",
+          "anchor_hash_source": "fn deprecated_symbol()"
+        }
+      ]
+    },
+    {
+      "_label": "unverifiable_missing_file",
+      "anchors": [
+        {
+          "file_path": "src/does_not_exist.rs",
+          "anchor_text": "fn ghost()",
+          "anchor_hash_source": "fn ghost()"
+        }
+      ]
+    },
+    {
+      "_label": "not_applicable_no_anchors",
+      "anchors": []
+    },
+    {
+      "_label": "verified_two_anchors_same_file",
+      "anchors": [
+        {
+          "file_path": "src/handlers/router.rs",
+          "anchor_text": "fn handle_request(req: Request) -> Response",
+          "anchor_hash_source": "fn handle_request(req: Request) -> Response"
+        },
+        {
+          "file_path": "src/handlers/router.rs",
+          "anchor_text": "// router.rs",
+          "anchor_hash_source": "// router.rs"
+        }
+      ]
+    }
+  ],
+  "expected": [
+    { "verified_status": "verified", "trust_score": 1.0 },
+    { "verified_status": "verified", "trust_score": 1.0 },
+    { "verified_status": "stale", "trust_score": 0.3 },
+    { "verified_status": "unverifiable", "trust_score": 0.7 },
+    { "verified_status": "not_applicable", "trust_score": null },
+    { "verified_status": "verified", "trust_score": 1.0 }
+  ]
+}
