@@ -14,6 +14,8 @@ from typing import Optional
 from memorus.core.config import ReflectorConfig
 from memorus.core.engines.reflector.detector import PatternDetector
 from memorus.core.engines.reflector.distiller import BulletDistiller
+from memorus.core.engines.reflector.inbox import Inbox
+from memorus.core.engines.reflector.router import ReflectorRouter, RouteKind
 from memorus.core.engines.reflector.scorer import KnowledgeScorer
 from memorus.core.privacy.sanitizer import PrivacySanitizer
 from memorus.core.types import (
@@ -49,6 +51,7 @@ class ReflectorEngine:
         self,
         config: Optional[ReflectorConfig] = None,
         sanitizer: Optional[PrivacySanitizer] = None,
+        inbox: Optional[Inbox] = None,
     ) -> None:
         self._config = config or ReflectorConfig()
         self._detector = PatternDetector()
@@ -62,6 +65,25 @@ class ReflectorEngine:
         self._llm_distiller: Optional[object] = None
         if self._mode in ("llm", "hybrid"):
             self._init_llm_components()
+
+        # STORY-R095 — router / inbox (only meaningful in llm/hybrid modes)
+        self._inbox: Optional[Inbox] = inbox
+        self._router: Optional[ReflectorRouter] = None
+        if (
+            self._mode in ("llm", "hybrid")
+            and self._config.batch.batch_enabled
+        ):
+            try:
+                self._inbox = self._inbox or Inbox(
+                    path=self._config.batch.inbox_path,
+                    consumed_retention_seconds=self._config.batch.consumed_retention_seconds,
+                )
+                self._router = ReflectorRouter(self._config, inbox=self._inbox)
+            except Exception as e:
+                logger.warning(
+                    "ReflectorEngine: router init failed, batching disabled: %s", e,
+                )
+                self._router = None
 
     def _init_llm_components(self) -> None:
         """Initialize LLM evaluator and distiller. Falls back to rules on failure."""
@@ -91,15 +113,31 @@ class ReflectorEngine:
         Each stage has an independent failure boundary -- if one stage fails,
         fallback logic is used rather than crashing the entire pipeline.
         Returns an empty list when there is nothing to learn.
+
+        When batching is enabled (mode=llm/hybrid and reflector.batch.batch_enabled=True),
+        non-correction turns are appended to the inbox and an empty list is
+        returned — the caller should treat this as ``AckPending``. Corrections
+        and rules-mode callers still run the realtime pipeline unchanged.
         """
         if event is None:
             logger.debug("ReflectorEngine.reflect: event is None, returning []")
             return []
 
         logger.debug(
-            "ReflectorEngine.reflect: user_msg_len=%d asst_msg_len=%d mode=%s",
+            "ReflectorEngine.reflect: user_msg_len=%d asst_msg_len=%d mode=%s router=%s",
             len(event.user_message), len(event.assistant_message), self._mode,
+            "on" if self._router is not None else "off",
         )
+
+        if self._router is not None:
+            decision = self._router.route(event)
+            if decision.kind == RouteKind.INBOX:
+                logger.debug(
+                    "ReflectorEngine.reflect: routed to inbox (ack_pending, reason=%s)",
+                    decision.reason,
+                )
+                return []
+            # Otherwise fall through to the realtime pipeline below.
 
         if self._mode == "llm":
             return self._reflect_llm(event)
@@ -107,6 +145,18 @@ class ReflectorEngine:
             return self._reflect_hybrid(event)
         else:
             return self._reflect_rules(event)
+
+    # ------------------------------------------------------------------
+    # Router / Inbox accessors (used by IdleOrchestrator and CLI)
+    # ------------------------------------------------------------------
+
+    @property
+    def router(self) -> Optional[ReflectorRouter]:
+        return self._router
+
+    @property
+    def inbox(self) -> Optional[Inbox]:
+        return self._inbox
 
     # ------------------------------------------------------------------
     # Mode: rules (original pipeline)

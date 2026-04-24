@@ -87,6 +87,8 @@ class GeneratorEngine:
         self,
         config: RetrievalConfig | None = None,
         vector_searcher: VectorSearcher | None = None,
+        inbox: Any | None = None,
+        provisional_score_factor: float = 0.5,
     ) -> None:
         self._config = config or RetrievalConfig()
         self._exact_matcher = ExactMatcher()
@@ -96,6 +98,9 @@ class GeneratorEngine:
         self._score_merger = ScoreMerger(self._config)
         # Track whether we have already logged a degradation warning
         self._degraded_logged = False
+        # STORY-R095 — optional inbox used for provisional search hits
+        self._inbox = inbox
+        self._provisional_factor = max(0.0, min(1.0, float(provisional_score_factor)))
 
     # ------------------------------------------------------------------
     # Public API
@@ -109,6 +114,7 @@ class GeneratorEngine:
         filters: dict[str, Any] | None = None,
         scope: str | None = None,
         now: datetime | None = None,
+        include_pending: bool = True,
     ) -> list[ScoredBullet]:
         """Run the full hybrid retrieval pipeline.
 
@@ -202,6 +208,13 @@ class GeneratorEngine:
         scored = self._score_merger.merge(
             keyword_results, semantic_results, bullet_infos, target_scope=scope, now=now,
         )
+
+        # -- STORY-R095 provisional hits from inbox ----------------------------
+        if include_pending and self._inbox is not None:
+            provisional = self._search_inbox(query, limit)
+            if provisional:
+                scored = scored + provisional
+                scored.sort(key=lambda sb: sb.final_score, reverse=True)
 
         return scored[:limit]
 
@@ -334,3 +347,60 @@ class GeneratorEngine:
         except Exception as e:
             logger.warning("L4 VectorSearcher failed: %s", e)
             return []
+
+    # ------------------------------------------------------------------
+    # Provisional search (STORY-R095)
+    # ------------------------------------------------------------------
+
+    def _search_inbox(self, query: str, limit: int) -> list[ScoredBullet]:
+        """Return keyword-hit ScoredBullets drawn from pending inbox entries.
+
+        Each hit is scored at ``provisional_score_factor`` (default 0.5) of the
+        raw L1 ExactMatcher score and flagged ``provisional=True`` inside the
+        ScoredBullet metadata so callers can render them differently.
+        """
+        try:
+            pending = self._inbox.list_pending()
+        except Exception as e:  # defensive — an inbox failure must not break search
+            logger.warning("GeneratorEngine: inbox read failed: %s", e)
+            return []
+        if not pending:
+            return []
+
+        contents = [
+            ((e.content or "") + "\n" + (e.assistant_message or "")).strip()
+            for e in pending
+        ]
+        try:
+            matches = self._exact_matcher.match_batch(query, contents)
+        except Exception as e:
+            logger.warning("GeneratorEngine: provisional L1 failed: %s", e)
+            return []
+
+        results: list[ScoredBullet] = []
+        for entry, m in zip(pending, matches):
+            if m.score <= 0.0:
+                continue
+            base_score = m.score / 35.0  # normalize roughly against keyword max
+            final = base_score * self._provisional_factor
+            md: dict[str, Any] = {
+                "provisional": True,
+                "inbox_id": entry.id,
+                "conversation_id": entry.conversation_id,
+                "turn_offset": entry.turn_offset,
+                "pending_reason": "inbox",
+            }
+            results.append(
+                ScoredBullet(
+                    bullet_id=f"inbox:{entry.id}",
+                    content=(entry.content or "")[:500],
+                    final_score=final,
+                    keyword_score=m.score,
+                    semantic_score=0.0,
+                    decay_weight=1.0,
+                    recency_boost=1.0,
+                    metadata=md,
+                )
+            )
+        results.sort(key=lambda sb: sb.final_score, reverse=True)
+        return results[:limit]
