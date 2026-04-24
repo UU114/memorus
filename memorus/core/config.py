@@ -26,6 +26,45 @@ _VALID_REFLECTOR_MODES = frozenset({"rules", "llm", "hybrid"})
 # ---------------------------------------------------------------------------
 
 
+class ReflectorBatchConfig(BaseModel):
+    """Configuration for delayed batch distillation (STORY-R095).
+
+    When ``batch_enabled`` is ``True`` and the reflector runs in a mode that
+    uses the LLM ("llm" or "hybrid"), non-correction turns are appended to
+    ``inbox_path`` instead of being distilled immediately. A BatchAnalyzer
+    stage drains the inbox during the IdleOrchestrator pass.
+    """
+
+    # Default OFF — delayed batching is opt-in per deployment so that the
+    # vanilla ReflectorEngine remains backwards-compatible with callers that
+    # expect realtime bullets. Enable via config or the daemon bootstrap.
+    batch_enabled: bool = False
+    inbox_path: str = ".ace/inbox.jsonl"
+    # Triggers
+    batch_min_turns: int = Field(default=10, ge=1)
+    batch_max_age_seconds: int = Field(default=4 * 3600, ge=0)
+    # Batch sizing
+    min_batch_size: int = Field(default=10, ge=1)
+    max_batch_size: int = Field(default=50, ge=1)
+    # Token budget per single prompt (Analyze or Generate)
+    prompt_token_budget: int = Field(default=8000, gt=0)
+    # Retention
+    consumed_retention_seconds: int = Field(default=7 * 24 * 3600, ge=0)
+    # Failure handling
+    max_batch_retries: int = Field(default=3, ge=1)
+    # Provisional search
+    provisional_score_factor: float = Field(default=0.5, ge=0.0, le=1.0)
+
+    @model_validator(mode="after")
+    def _validate_sizes(self) -> ReflectorBatchConfig:
+        if self.max_batch_size < self.min_batch_size:
+            raise ValueError(
+                f"max_batch_size ({self.max_batch_size}) must be >= "
+                f"min_batch_size ({self.min_batch_size})"
+            )
+        return self
+
+
 class ReflectorConfig(BaseModel):
     """Configuration for the Reflector engine."""
 
@@ -41,6 +80,9 @@ class ReflectorConfig(BaseModel):
     max_eval_tokens: int = Field(default=512, gt=0)
     max_distill_tokens: int = Field(default=256, gt=0)
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
+
+    # STORY-R095 — delayed batch distillation
+    batch: ReflectorBatchConfig = Field(default_factory=ReflectorBatchConfig)
 
     @model_validator(mode="after")
     def _validate_mode(self) -> ReflectorConfig:

@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 SessionsEmptyFn = Callable[[], Awaitable[bool]]
 LoadBulletsFn = Callable[[], list[ExistingBullet]]
+BatchStageFn = Callable[[], Any]
+"""Callable invoked before the consolidate stage (STORY-R095 BatchAnalyzer)."""
 
 
 class IdleOrchestrator:
@@ -46,13 +48,16 @@ class IdleOrchestrator:
         curator_config: CuratorConfig,
         adapter: MemoryAdapter,
         load_bullets: LoadBulletsFn,
+        batch_stage: Optional[BatchStageFn] = None,
     ) -> None:
         self._config = config
         self._curator_config = curator_config
         self._adapter = adapter
         self._load_bullets = load_bullets
+        self._batch_stage = batch_stage
         self._last_activity_monotonic: float = time.monotonic()
         self._last_run: Optional[datetime] = None
+        self._last_batch_report: Any = None
         self._run_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
 
@@ -71,6 +76,21 @@ class IdleOrchestrator:
     @property
     def last_run(self) -> Optional[datetime]:
         return self._last_run
+
+    @property
+    def last_batch_report(self) -> Any:
+        """Result of the most recent BatchAnalyzer stage, if any."""
+        return self._last_batch_report
+
+    async def _run_batch_stage(self) -> Any:
+        """Invoke the configured batch stage, handling both sync and async returns."""
+        stage = self._batch_stage
+        if stage is None:
+            return None
+        result = stage()
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
 
     @property
     def is_running(self) -> bool:
@@ -112,6 +132,17 @@ class IdleOrchestrator:
         async with self._run_lock:
             start_dt = datetime.now(timezone.utc)
             start_mono = time.monotonic()
+
+            # STORY-R095 — drain the inbox BEFORE loading bullets so any new
+            # bullets produced by BatchAnalyzer are visible to consolidate.
+            if self._batch_stage is not None:
+                try:
+                    self._last_batch_report = await self._run_batch_stage()
+                except Exception as e:
+                    # Never let the batch stage take down consolidate.
+                    logger.error(
+                        "orchestrator: batch stage failed: %s", e, exc_info=True,
+                    )
 
             try:
                 bullets = self._load_bullets()

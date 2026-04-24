@@ -1091,3 +1091,119 @@ def review_list(
             click.echo(f"    reason: {row['reason']}")
         if row.get("hint"):
             click.echo(f"    hint: {row['hint']}")
+
+
+# ---------------------------------------------------------------------------
+# inbox command group (STORY-R095)
+# ---------------------------------------------------------------------------
+
+
+@cli.group("inbox")
+@click.pass_context
+def inbox_group(ctx: click.Context) -> None:
+    """Inspect and drive the deferred-distillation inbox."""
+    ctx.ensure_object(dict)
+
+
+def _resolve_inbox_path() -> str:
+    """Locate the inbox path from MemorusConfig defaults."""
+    from memorus.core.config import MemorusConfig
+
+    return MemorusConfig().reflector.batch.inbox_path
+
+
+@inbox_group.command("status")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def inbox_status_cmd(ctx: click.Context, as_json: bool) -> None:
+    """Show counts of pending / in_progress / consumed inbox entries."""
+    from memorus.core.engines.reflector.inbox import Inbox
+
+    path = _resolve_inbox_path()
+    try:
+        box = Inbox(path)
+        counts = box.counts()
+    except OSError as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    if as_json:
+        click.echo(json.dumps({"path": path, **counts}, indent=2))
+        return
+
+    click.echo(f"Inbox: {path}")
+    click.echo(f"  pending:            {counts['pending']}")
+    click.echo(f"  in_progress:        {counts['in_progress']}")
+    click.echo(f"  consumed last hour: {counts['consumed_last_hour']}")
+    click.echo(f"  skipped:            {counts['skipped']}")
+    click.echo(f"  total entries:      {counts['total']}")
+
+
+@inbox_group.command("flush")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.pass_context
+def inbox_flush_cmd(ctx: click.Context, as_json: bool) -> None:
+    """Force a BatchAnalyzer pass now, bypassing idle/min-turn gates."""
+    memory = _create_memory()
+    if memory is None:
+        ctx.exit(1)
+        return
+
+    try:
+        from memorus.core.config import MemorusConfig
+        from memorus.core.engines.reflector.batch_analyzer import BatchAnalyzer
+        from memorus.core.engines.reflector.inbox import Inbox
+
+        mcfg = getattr(memory, "_config", None)
+        if not isinstance(mcfg, MemorusConfig):
+            mcfg = MemorusConfig()
+
+        inbox = Inbox(
+            mcfg.reflector.batch.inbox_path,
+            consumed_retention_seconds=mcfg.reflector.batch.consumed_retention_seconds,
+        )
+        analyzer = BatchAnalyzer(mcfg.reflector, inbox)
+
+        def _emit(bullets: list[Any]) -> None:
+            for b in bullets:
+                try:
+                    memory.add(
+                        messages=getattr(b, "content", "") or "",
+                        metadata={
+                            "memorus_distilled_rule": getattr(b, "distilled_rule", None),
+                            "memorus_section": getattr(getattr(b, "section", None), "value", None),
+                            "memorus_knowledge_type": getattr(
+                                getattr(b, "knowledge_type", None), "value", None,
+                            ),
+                        },
+                    )
+                except Exception as e:
+                    click.echo(f"warn: failed to persist bullet: {e}", err=True)
+
+        analyzer.set_emit_callback(_emit)
+        report = analyzer.run_once(force=True)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    payload = {
+        "batches": report.batches,
+        "turns_processed": report.turns_processed,
+        "bullets_produced": report.bullets_produced,
+        "bullets_fallback": report.bullets_fallback,
+        "batches_retried": report.batches_retried,
+        "batches_failed": report.batches_failed,
+        "analyze_tokens": report.analyze_tokens,
+        "generate_tokens": report.generate_tokens,
+    }
+    if as_json:
+        click.echo(json.dumps(payload, indent=2))
+        return
+    click.echo(
+        f"Flushed inbox: {payload['turns_processed']} turns in "
+        f"{payload['batches']} batch(es) -> {payload['bullets_produced']} bullet(s) "
+        f"(fallback: {payload['bullets_fallback']}, retries: {payload['batches_retried']}, "
+        f"failed: {payload['batches_failed']})"
+    )
