@@ -53,6 +53,48 @@ class CurateResult:
 
 
 # ---------------------------------------------------------------------------
+# Corpus consolidation (STORY-R094) — aligned byte-for-byte with the Rust
+# ``memorus_ace::curator::consolidate_corpus``.
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MergeGroup:
+    """A group of near-duplicate bullets that should be merged together."""
+
+    bullet_ids: list[str]
+    max_similarity: float
+
+
+@dataclass
+class ConsolidateConflictInfo:
+    """Conflict between two existing bullets discovered during consolidate.
+
+    Mirrors Rust's ``curator::conflict::ConflictInfo`` but aimed at corpus
+    scan (both ids known). Naming kept distinct from the ``Conflict`` type
+    produced by the live-curate conflict detector.
+    """
+
+    a_id: str
+    b_id: str
+    a_content: str
+    b_content: str
+    similarity: float
+    conflict_type: str  # "negation" | "contradiction" | "value_difference"
+    reason: str
+
+
+@dataclass
+class ConsolidateResult:
+    """Result of a corpus-wide consolidation pass."""
+
+    merge_groups: list[MergeGroup] = field(default_factory=list)
+    redundant_ids: list[str] = field(default_factory=list)
+    conflicts: list[ConsolidateConflictInfo] = field(default_factory=list)
+    pairs_compared: int = 0
+
+
+# ---------------------------------------------------------------------------
 # CuratorEngine
 # ---------------------------------------------------------------------------
 
@@ -254,6 +296,96 @@ class CuratorEngine:
         return None
 
     # ------------------------------------------------------------------
+    # Corpus consolidation (STORY-R094)
+    # ------------------------------------------------------------------
+
+    def consolidate_corpus(
+        self,
+        bullets: list[ExistingBullet],
+        max_per_pass: int = 5000,
+    ) -> ConsolidateResult:
+        """Run corpus-wide deduplication.
+
+        Semantics MUST match ``memorus_ace::curator::Curator::consolidate_corpus``:
+
+        * Pairs (i, j) with ``j > i`` are scanned in order.
+        * If similarity >= ``skip_threshold`` → ``bullet[j]`` is marked redundant.
+        * Else if similarity >= ``dedup_threshold`` → merge into group seeded
+          at ``bullet[i]``.
+        * If ``conflict_detection`` is on and ``conflict_min <= sim < conflict_max``,
+          run pairwise conflict detection and append results.
+        * ``max_per_pass`` caps ``n = min(len, max_per_pass)`` to bound O(n^2).
+
+        Thresholds (mirrors Rust defaults, with Python ``CuratorConfig``
+        fallback values for missing fields):
+
+        * ``dedup_threshold``: ``CuratorConfig.similarity_threshold`` (0.8)
+        * ``skip_threshold``: 0.95 (Rust default; not exposed in Python config)
+        * ``conflict_min_similarity``: ``CuratorConfig.conflict_min_similarity``
+        * ``conflict_max_similarity``: ``CuratorConfig.conflict_max_similarity``
+        """
+        result = ConsolidateResult()
+        n = min(len(bullets), max_per_pass)
+        if n < 2:
+            return result
+
+        dedup_threshold = self._config.similarity_threshold
+        skip_threshold = max(0.95, dedup_threshold)
+        conflict_min = self._config.conflict_min_similarity
+        conflict_max = self._config.conflict_max_similarity
+        conflict_on = self._config.conflict_detection
+
+        slice_ = bullets[:n]
+        grouped: set[str] = set()
+
+        for i in range(n):
+            if slice_[i].bullet_id in grouped:
+                continue
+            group_ids: list[str] = [slice_[i].bullet_id]
+            max_sim = 0.0
+
+            for j in range(i + 1, n):
+                if slice_[j].bullet_id in grouped:
+                    continue
+                result.pairs_compared += 1
+
+                sim = self._compute_bullet_similarity(slice_[i], slice_[j])
+
+                if sim >= skip_threshold:
+                    result.redundant_ids.append(slice_[j].bullet_id)
+                    grouped.add(slice_[j].bullet_id)
+                elif sim >= dedup_threshold:
+                    group_ids.append(slice_[j].bullet_id)
+                    grouped.add(slice_[j].bullet_id)
+                    if sim > max_sim:
+                        max_sim = sim
+
+                if conflict_on and conflict_min <= sim < conflict_max:
+                    conflicts = _detect_bullet_conflicts(
+                        slice_[i], slice_[j], sim,
+                    )
+                    result.conflicts.extend(conflicts)
+
+            if len(group_ids) > 1:
+                grouped.add(slice_[i].bullet_id)
+                result.merge_groups.append(
+                    MergeGroup(bullet_ids=group_ids, max_similarity=max_sim)
+                )
+
+        return result
+
+    def _compute_bullet_similarity(
+        self, a: ExistingBullet, b: ExistingBullet
+    ) -> float:
+        """Compute similarity between two existing bullets.
+
+        Prefers cosine on embeddings; falls back to Jaccard token overlap.
+        """
+        if a.embedding is not None and b.embedding is not None:
+            return self.cosine_similarity(a.embedding, b.embedding)
+        return self.text_similarity(a.content, b.content)
+
+    # ------------------------------------------------------------------
     # Properties
     # ------------------------------------------------------------------
 
@@ -261,3 +393,120 @@ class CuratorEngine:
     def threshold(self) -> float:
         """Current similarity threshold."""
         return self._config.similarity_threshold
+
+
+# ---------------------------------------------------------------------------
+# Conflict detection between two existing bullets (STORY-R094).
+# Mirrors Rust's ``detect_bullet_conflicts``.
+# ---------------------------------------------------------------------------
+
+_NEGATION_WORDS: frozenset[str] = frozenset({
+    # English
+    "not", "don't", "doesn't", "never", "avoid", "shouldn't", "won't",
+    "cannot", "can't", "no", "without",
+    # Chinese (whole-token)
+    "不", "不要", "不能", "避免", "禁止", "勿", "别",
+})
+_NEGATION_ZH: tuple[str, ...] = (
+    "不", "不要", "不能", "避免", "禁止", "勿", "别",
+)
+_ANTONYM_PAIRS: tuple[tuple[str, str], ...] = (
+    ("always", "never"),
+    ("enable", "disable"),
+    ("use", "avoid"),
+    ("recommended", "deprecated"),
+    ("allow", "deny"),
+    ("include", "exclude"),
+    ("true", "false"),
+    ("yes", "no"),
+    ("sync", "async"),
+    ("mutable", "immutable"),
+)
+
+
+def _count_negations(text_lower: str) -> int:
+    """Count negation-word occurrences. Mirrors Rust helper byte-for-byte.
+
+    * Tokenises on whitespace and strips trailing ASCII punctuation (except
+      apostrophes) so ``"don't,"`` still matches ``"don't"``.
+    * For each token, if it is a whole-word negation, count once.
+    * Otherwise, if the token *contains* any Chinese negation word, count
+      once (Chinese text may lack whitespace).
+    """
+    count = 0
+    for token in text_lower.split():
+        clean = token.rstrip(
+            "!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~"  # ASCII punct minus apostrophe
+        )
+        if clean in _NEGATION_WORDS:
+            count += 1
+            continue
+        for zh in _NEGATION_ZH:
+            if zh in token:
+                count += 1
+                break
+    return count
+
+
+def _find_antonym_pair(
+    text_a_lower: str, text_b_lower: str
+) -> tuple[str, str] | None:
+    """Find the first antonym pair where text_a has one word and text_b has the other."""
+    def _tokenise(s: str) -> list[str]:
+        out: list[str] = []
+        for tok in s.split():
+            out.append(tok.rstrip("!\"#$%&()*+,-./:;<=>?@[\\]^_`{|}~"))
+        return out
+
+    tokens_a = _tokenise(text_a_lower)
+    tokens_b = _tokenise(text_b_lower)
+    for word_a, word_b in _ANTONYM_PAIRS:
+        if word_a in tokens_a and word_b in tokens_b:
+            return (word_a, word_b)
+        if word_b in tokens_a and word_a in tokens_b:
+            return (word_b, word_a)
+    return None
+
+
+def _detect_bullet_conflicts(
+    a: ExistingBullet,
+    b: ExistingBullet,
+    similarity: float,
+) -> list[ConsolidateConflictInfo]:
+    """Detect conflicts between two existing bullets (byte-for-byte vs Rust)."""
+    a_lower = a.content.lower()
+    b_lower = b.content.lower()
+    conflicts: list[ConsolidateConflictInfo] = []
+
+    # Negation asymmetry (one has >0 negations, the other has 0)
+    neg_a = _count_negations(a_lower)
+    neg_b = _count_negations(b_lower)
+    if (neg_a > 0) != (neg_b > 0):
+        conflicts.append(
+            ConsolidateConflictInfo(
+                a_id=a.bullet_id,
+                b_id=b.bullet_id,
+                a_content=a.content,
+                b_content=b.content,
+                similarity=similarity,
+                conflict_type="negation",
+                reason=f"Negation mismatch ({neg_a} vs {neg_b} negation words)",
+            )
+        )
+
+    # Antonym check
+    pair = _find_antonym_pair(a_lower, b_lower)
+    if pair is not None:
+        word_a, word_b = pair
+        conflicts.append(
+            ConsolidateConflictInfo(
+                a_id=a.bullet_id,
+                b_id=b.bullet_id,
+                a_content=a.content,
+                b_content=b.content,
+                similarity=similarity,
+                conflict_type="contradiction",
+                reason=f'Antonym pair: "{word_a}" vs "{word_b}"',
+            )
+        )
+    return conflicts

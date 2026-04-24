@@ -126,6 +126,9 @@ class MemorusDaemon:
         self._running = False
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._shutdown_event: Optional[asyncio.Event] = None
+        # IdleOrchestrator (STORY-R094)
+        self._orchestrator: Any = None
+        self._orchestrator_task: Optional[asyncio.Task[None]] = None
 
     # -- Properties ---------------------------------------------------------
 
@@ -280,6 +283,8 @@ class MemorusDaemon:
                     return self._handle_session_register(request.data)
                 case "session_unregister":
                     return self._handle_session_unregister(request.data)
+                case "consolidate_now":
+                    return await self._handle_consolidate_now()
                 case "shutdown":
                     return await self._handle_shutdown()
                 case _:
@@ -377,6 +382,35 @@ class MemorusDaemon:
             self._start_idle_timer()
         return DaemonResponse(status="ok")
 
+    async def _handle_consolidate_now(self) -> DaemonResponse:
+        """Force-run a consolidate pass via the IdleOrchestrator (STORY-R094)."""
+        if self._orchestrator is None:
+            return DaemonResponse(
+                status="error", error="IdleOrchestrator not initialized"
+            )
+        try:
+            report = await self._orchestrator.run_once(force=True)
+        except Exception as e:
+            logger.error("consolidate_now failed: %s", e, exc_info=True)
+            return DaemonResponse(status="error", error=str(e))
+        if report is None:
+            return DaemonResponse(
+                status="error", error="consolidate did not produce a report"
+            )
+        return DaemonResponse(
+            status="ok",
+            data={
+                "merged_groups": report.merged_groups,
+                "merged_bullets_total": report.merged_bullets_total,
+                "soft_deleted": report.soft_deleted,
+                "auto_supersede": report.auto_supersede,
+                "queued_for_review": report.queued_for_review,
+                "marked_conflict": report.marked_conflict,
+                "duration_seconds": report.duration_seconds,
+                "errors": list(report.errors),
+            },
+        )
+
     async def _handle_shutdown(self) -> DaemonResponse:
         """Initiate graceful shutdown."""
         logger.info("Shutdown command received.")
@@ -438,6 +472,9 @@ class MemorusDaemon:
             # Start idle timer immediately (no sessions yet)
             self._start_idle_timer()
 
+            # Spawn IdleOrchestrator (STORY-R094)
+            self._spawn_orchestrator()
+
             logger.info("MemorusDaemon ready and serving.")
             # Block until shutdown
             await self._shutdown_event.wait()
@@ -457,6 +494,20 @@ class MemorusDaemon:
 
         logger.info("MemorusDaemon shutting down...")
         self._running = False
+
+        # Stop orchestrator (STORY-R094)
+        if self._orchestrator is not None:
+            try:
+                self._orchestrator.stop()
+            except Exception as e:
+                logger.debug("Orchestrator stop: %s", e)
+        if self._orchestrator_task is not None and not self._orchestrator_task.done():
+            self._orchestrator_task.cancel()
+            try:
+                await self._orchestrator_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._orchestrator_task = None
 
         # Cancel idle timer
         self._cancel_idle_timer()
@@ -499,6 +550,85 @@ class MemorusDaemon:
         except Exception as exc:
             logger.error("Failed to initialize Memory: %s", exc)
             raise DaemonError(f"Memory initialization failed: {exc}") from exc
+
+    # -- IdleOrchestrator (STORY-R094) --------------------------------------
+
+    def _spawn_orchestrator(self) -> None:
+        """Construct and launch the IdleOrchestrator background task."""
+        try:
+            from memorus.core.config import ConsolidateConfig, CuratorConfig, MemorusConfig
+            from memorus.core.daemon.orchestrator import (
+                IdleOrchestrator,
+                Mem0MemoryAdapter,
+            )
+
+            # Pull config from the Memory's MemorusConfig if available.
+            mcfg = getattr(self._memory, "_config", None) if self._memory else None
+            if isinstance(mcfg, MemorusConfig):
+                consolidate_cfg = mcfg.consolidate
+                curator_cfg = mcfg.curator
+            else:
+                consolidate_cfg = ConsolidateConfig()
+                curator_cfg = CuratorConfig()
+
+            adapter = Mem0MemoryAdapter(self._memory)
+            orch = IdleOrchestrator(
+                config=consolidate_cfg,
+                curator_config=curator_cfg,
+                adapter=adapter,
+                load_bullets=self._load_bullets_for_consolidate,
+            )
+            self._orchestrator = orch
+
+            sessions_empty_fn = self._make_sessions_empty_fn()
+            loop = asyncio.get_event_loop()
+            self._orchestrator_task = loop.create_task(
+                orch.run_forever(sessions_empty_fn)
+            )
+            logger.info("IdleOrchestrator spawned.")
+        except Exception as e:
+            logger.error("Failed to spawn IdleOrchestrator: %s", e, exc_info=True)
+
+    def _make_sessions_empty_fn(self) -> Any:
+        async def _fn() -> bool:
+            return len(self._sessions) == 0
+        return _fn
+
+    def _load_bullets_for_consolidate(self) -> list[Any]:
+        """Load all live bullets as :class:`ExistingBullet` for consolidation."""
+        from memorus.core.engines.curator.engine import ExistingBullet
+
+        if self._memory is None:
+            return []
+        try:
+            raw = self._memory.get_all()
+        except Exception as e:
+            logger.warning("orchestrator: get_all failed: %s", e)
+            return []
+
+        memories = raw.get("results") if isinstance(raw, dict) else None
+        if not memories:
+            memories = raw.get("memories", []) if isinstance(raw, dict) else []
+
+        bullets: list[ExistingBullet] = []
+        for mem in memories or []:
+            if not isinstance(mem, dict):
+                continue
+            meta = mem.get("metadata") or {}
+            if isinstance(meta, dict) and meta.get("memorus_deleted_at"):
+                continue
+            bid = mem.get("id") or ""
+            content = mem.get("memory") or mem.get("content") or ""
+            scope = meta.get("memorus_scope", "global") if isinstance(meta, dict) else "global"
+            bullets.append(
+                ExistingBullet(
+                    bullet_id=bid,
+                    content=content,
+                    scope=scope,
+                    metadata=meta if isinstance(meta, dict) else {},
+                )
+            )
+        return bullets
 
     def _install_signal_handlers(self) -> None:
         """Install SIGTERM/SIGINT handlers for clean shutdown."""
