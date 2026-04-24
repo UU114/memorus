@@ -38,6 +38,9 @@ LoadBulletsFn = Callable[[], list[ExistingBullet]]
 BatchStageFn = Callable[[], Any]
 """Callable invoked before the consolidate stage (STORY-R095 BatchAnalyzer)."""
 
+TopicStageFn = Callable[[], Any]
+"""Callable invoked AFTER the consolidate stage (STORY-R097 TopicEngine)."""
+
 
 class IdleOrchestrator:
     """Coordinates consolidate runs inside the daemon."""
@@ -49,15 +52,18 @@ class IdleOrchestrator:
         adapter: MemoryAdapter,
         load_bullets: LoadBulletsFn,
         batch_stage: Optional[BatchStageFn] = None,
+        topic_stage: Optional[TopicStageFn] = None,
     ) -> None:
         self._config = config
         self._curator_config = curator_config
         self._adapter = adapter
         self._load_bullets = load_bullets
         self._batch_stage = batch_stage
+        self._topic_stage = topic_stage
         self._last_activity_monotonic: float = time.monotonic()
         self._last_run: Optional[datetime] = None
         self._last_batch_report: Any = None
+        self._last_topic_report: Any = None
         self._run_lock = asyncio.Lock()
         self._stop_event = asyncio.Event()
 
@@ -81,6 +87,21 @@ class IdleOrchestrator:
     def last_batch_report(self) -> Any:
         """Result of the most recent BatchAnalyzer stage, if any."""
         return self._last_batch_report
+
+    @property
+    def last_topic_report(self) -> Any:
+        """Result of the most recent TopicEngine stage, if any."""
+        return self._last_topic_report
+
+    async def _run_topic_stage(self) -> Any:
+        """Invoke the configured topic stage, handling sync + async returns."""
+        stage = self._topic_stage
+        if stage is None:
+            return None
+        result = stage()
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
 
     async def _run_batch_stage(self) -> Any:
         """Invoke the configured batch stage, handling both sync and async returns."""
@@ -178,6 +199,16 @@ class IdleOrchestrator:
                 )
             except Exception as e:
                 logger.warning("orchestrator: log append failed: %s", e)
+
+            # STORY-R097 — post-consolidate TopicEngine pass. Exceptions are
+            # logged but must not mask the successful consolidate result.
+            if self._topic_stage is not None:
+                try:
+                    self._last_topic_report = await self._run_topic_stage()
+                except Exception as e:
+                    logger.error(
+                        "orchestrator: topic stage failed: %s", e, exc_info=True,
+                    )
 
             self._last_run = datetime.now(timezone.utc)
             return report
