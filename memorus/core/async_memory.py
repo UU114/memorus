@@ -25,8 +25,13 @@ class AsyncMemory:
         self._mem0_init_error: Optional[Exception] = None
         try:
             from mem0 import AsyncMemory as Mem0AsyncMemory
+            from mem0.configs.base import MemoryConfig
 
-            self._mem0 = Mem0AsyncMemory(config=self._config.to_mem0_config())
+            # mem0 >=1.0 takes a MemoryConfig object. AsyncMemory.from_config
+            # is itself a coroutine in 1.0.x, so we build the config directly.
+            self._mem0 = Mem0AsyncMemory(
+                config=MemoryConfig(**self._config.to_mem0_config())
+            )
         except Exception as e:
             self._mem0 = None
             self._mem0_init_error = e
@@ -78,6 +83,7 @@ class AsyncMemory:
         **kwargs: Any,
     ) -> dict[str, Any]:
         """Add memories. ACE mode processes through IngestPipeline."""
+        # mem0 >=1.0 dropped `filters` from add(); keep for search/get_all only.
         if not self._config.ace_enabled or self._ingest_pipeline is None:
             mem0 = self._ensure_mem0()
             return await mem0.add(
@@ -86,7 +92,6 @@ class AsyncMemory:
                 agent_id=agent_id,
                 run_id=run_id,
                 metadata=metadata,
-                filters=filters,
                 prompt=prompt,
                 **kwargs,
             )
@@ -99,7 +104,6 @@ class AsyncMemory:
             agent_id=agent_id,
             run_id=run_id,
             metadata=metadata,
-            filters=filters,
             prompt=prompt,
             **kwargs,
         )

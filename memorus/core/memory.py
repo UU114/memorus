@@ -45,7 +45,8 @@ class Memory:
         try:
             from mem0 import Memory as Mem0Memory
 
-            self._mem0 = Mem0Memory(config=self._config.to_mem0_config())
+            # mem0 >=1.0 takes a MemoryConfig object; from_config accepts the dict.
+            self._mem0 = Mem0Memory.from_config(self._config.to_mem0_config())
         except Exception as e:
             # If mem0 can't initialize (e.g., no API key), store the error.
             # Users must handle this if they need actual mem0 functionality.
@@ -236,13 +237,13 @@ class Memory:
         if not self._config.ace_enabled or self._ingest_pipeline is None:
             logger.debug("Memory.add -> proxy mode (ACE off or pipeline=None)")
             mem0 = self._ensure_mem0()
+            # mem0 >=1.0 dropped `filters` from add(); keep for search/get_all only.
             return mem0.add(
                 messages,
                 user_id=user_id,
                 agent_id=agent_id,
                 run_id=run_id,
                 metadata=metadata,
-                filters=filters,
                 prompt=prompt,
                 **kwargs,
             )
