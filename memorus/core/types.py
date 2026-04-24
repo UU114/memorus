@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import PurePath
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class BulletSection(str, Enum):
@@ -38,6 +39,80 @@ class SourceType(str, Enum):
     INTERACTION = "interaction"
     MANUAL = "manual"
     IMPORT = "import"
+
+
+# ---------------------------------------------------------------------------
+# Verification layer (STORY-R099 / EPIC-R018)
+# ---------------------------------------------------------------------------
+
+
+class VerifiedStatus(str, Enum):
+    """Verification state of a Bullet relative to the anchored source code.
+
+    The JSON wire form is the lowercase snake_case string. Must stay aligned
+    with ``memorus_core::models::bullet::VerifiedStatus`` on the Rust side.
+    """
+
+    VERIFIED = "verified"
+    STALE = "stale"
+    UNVERIFIABLE = "unverifiable"
+    NOT_APPLICABLE = "not_applicable"
+
+
+# Set of valid ``BulletMetadata.verified_status`` string values. Kept as a
+# plain set so the field can stay ``str | None`` for JSON compatibility while
+# still rejecting obvious typos at validate time.
+VERIFIED_STATUS_VALUES: frozenset[str] = frozenset(
+    v.value for v in VerifiedStatus
+)
+
+
+def _normalize_file_path(raw: str) -> str:
+    """Normalize an anchor file_path to forward-slash form.
+
+    Backslashes from Windows users get rewritten so the on-disk / JSON
+    representation is stable across platforms.
+    """
+    if not raw:
+        return raw
+    # ``PurePath.as_posix`` strips only if the string has drive letters; a
+    # direct replace is enough for the relative-path contract of anchors.
+    return raw.replace("\\", "/")
+
+
+class Anchor(BaseModel):
+    """A region anchor pinning a Bullet to a specific code location.
+
+    The tuple (``file_path``, ``anchor_text``, ``anchor_hash``) identifies the
+    slice of source material a Bullet was distilled from. The Verifier uses
+    this to detect drift between stored memory and current code state.
+
+    * ``file_path``: path relative to ``VerificationConfig.project_root``,
+      always stored with forward slashes.
+    * ``anchor_text``: the original textual region (capped at 200 chars to
+      keep storage bounded).
+    * ``anchor_hash``: sha256 hex digest of ``anchor_text``.
+    * ``created_at``: when the anchor was first captured.
+    """
+
+    file_path: str
+    anchor_text: str = Field(max_length=200)
+    anchor_hash: str
+    created_at: datetime
+
+    @field_validator("file_path", mode="before")
+    @classmethod
+    def _forward_slash(cls, v: object) -> object:
+        if isinstance(v, str):
+            return _normalize_file_path(v)
+        if isinstance(v, PurePath):
+            return v.as_posix()
+        return v
+
+    @staticmethod
+    def compute_hash(anchor_text: str) -> str:
+        """Return the sha256 hex digest of ``anchor_text``."""
+        return hashlib.sha256(anchor_text.encode("utf-8")).hexdigest()
 
 
 # ---------------------------------------------------------------------------
@@ -191,3 +266,25 @@ class BulletMetadata(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
     sources: list[SourceRef] = Field(default_factory=list)
+    # -- Verification layer (STORY-R099) ------------------------------------
+    # All fields default to empty/None so legacy JSON (pre-R099) continues to
+    # load without extra keys. Semantic meaning is assigned by STORY-R101+.
+    anchors: list[Anchor] = Field(default_factory=list)
+    verified_at: datetime | None = None
+    verified_status: str | None = None
+    trust_score: float | None = None
+
+    @field_validator("verified_status", mode="before")
+    @classmethod
+    def _check_verified_status(cls, v: object) -> object:
+        """Reject unknown verified_status strings — typos become errors."""
+        if v is None:
+            return v
+        if isinstance(v, VerifiedStatus):
+            return v.value
+        if isinstance(v, str) and v in VERIFIED_STATUS_VALUES:
+            return v
+        raise ValueError(
+            f"verified_status must be one of {sorted(VERIFIED_STATUS_VALUES)} "
+            f"or None, got {v!r}"
+        )

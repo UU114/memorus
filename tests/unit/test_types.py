@@ -1,11 +1,14 @@
 """Unit tests for memorus.types — BulletMetadata, enums, and auxiliary models."""
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from memorus.core.types import (
+    Anchor,
     BulletMetadata,
     BulletSection,
     CandidateBullet,
@@ -14,6 +17,7 @@ from memorus.core.types import (
     KnowledgeType,
     ScoredCandidate,
     SourceType,
+    VerifiedStatus,
 )
 
 
@@ -321,3 +325,151 @@ class TestCandidateBullet:
         )
         assert cb.content == "Always pin futures in Rust"
         assert cb.section == BulletSection.PATTERNS
+
+
+# ── Verification layer tests (STORY-R099) ──────────────────────────────
+
+
+_FIXTURE_PATH = Path(__file__).resolve().parents[1] / "fixtures" / "anchor_sample.json"
+
+
+class TestVerifiedStatus:
+    def test_string_values_match_wire_form(self) -> None:
+        # The exact lowercase snake_case strings are part of the wire contract
+        # with the Rust side; if these change, the cross-language fixture
+        # tests will break.
+        assert VerifiedStatus.VERIFIED.value == "verified"
+        assert VerifiedStatus.STALE.value == "stale"
+        assert VerifiedStatus.UNVERIFIABLE.value == "unverifiable"
+        assert VerifiedStatus.NOT_APPLICABLE.value == "not_applicable"
+
+
+class TestAnchor:
+    def test_construction_and_compute_hash(self) -> None:
+        text = "fn handle_request(req: Request) -> Response"
+        a = Anchor(
+            file_path="src/handlers/router.rs",
+            anchor_text=text,
+            anchor_hash=Anchor.compute_hash(text),
+            created_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        )
+        assert a.file_path == "src/handlers/router.rs"
+        assert a.anchor_hash == Anchor.compute_hash(text)
+        assert len(a.anchor_hash) == 64  # sha256 hex
+
+    def test_forward_slash_normalization_from_backslash(self) -> None:
+        a = Anchor(
+            file_path="src\\handlers\\router.rs",
+            anchor_text="fn x() {}",
+            anchor_hash=Anchor.compute_hash("fn x() {}"),
+            created_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        )
+        assert a.file_path == "src/handlers/router.rs"
+
+    def test_anchor_text_max_length_enforced(self) -> None:
+        too_long = "x" * 201
+        with pytest.raises(ValidationError):
+            Anchor(
+                file_path="src/x.rs",
+                anchor_text=too_long,
+                anchor_hash=Anchor.compute_hash(too_long),
+                created_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+            )
+
+    def test_json_round_trip(self) -> None:
+        text = "fn verify() -> bool"
+        original = Anchor(
+            file_path="src/verifier.rs",
+            anchor_text=text,
+            anchor_hash=Anchor.compute_hash(text),
+            created_at=datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc),
+        )
+        restored = Anchor.model_validate_json(original.model_dump_json())
+        assert restored == original
+
+
+class TestBulletMetadataVerificationFields:
+    def test_default_verification_fields(self) -> None:
+        b = BulletMetadata()
+        assert b.anchors == []
+        assert b.verified_at is None
+        assert b.verified_status is None
+        assert b.trust_score is None
+
+    def test_legacy_json_without_anchors_loads_with_defaults(self) -> None:
+        # Pre-R099 wire shape: no anchors / verified_status / trust_score
+        # / verified_at keys. Must load with defaults (empty list, None).
+        legacy = {
+            "section": "general",
+            "knowledge_type": "method",
+            "instructivity_score": 50,
+            "recall_count": 0,
+            "decay_weight": 1.0,
+            "scope": "global",
+            "schema_version": 1,
+        }
+        b = BulletMetadata.model_validate(legacy)
+        assert b.anchors == []
+        assert b.verified_status is None
+        assert b.verified_at is None
+        assert b.trust_score is None
+
+    def test_invalid_verified_status_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            BulletMetadata(verified_status="not_a_real_status")
+
+    def test_verified_status_accepts_enum_value(self) -> None:
+        b = BulletMetadata(verified_status=VerifiedStatus.VERIFIED)
+        assert b.verified_status == "verified"
+
+    def test_with_anchor_round_trip(self) -> None:
+        text = "fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>)"
+        anchor = Anchor(
+            file_path="src/future.rs",
+            anchor_text=text,
+            anchor_hash=Anchor.compute_hash(text),
+            created_at=datetime(2026, 4, 24, tzinfo=timezone.utc),
+        )
+        original = BulletMetadata(
+            anchors=[anchor],
+            verified_at=datetime(2026, 4, 24, 13, 0, tzinfo=timezone.utc),
+            verified_status="verified",
+            trust_score=1.0,
+        )
+        restored = BulletMetadata.model_validate_json(original.model_dump_json())
+        assert restored.anchors == original.anchors
+        assert restored.verified_at == original.verified_at
+        assert restored.verified_status == "verified"
+        assert restored.trust_score == 1.0
+
+
+class TestAnchorCrossLanguageFixture:
+    """Cross-language wire compatibility — same JSON loads in both runtimes.
+
+    The Rust side has an analogous test that loads
+    `tests/fixtures/anchor_sample.json` and asserts the same semantic values.
+    """
+
+    def test_loads_committed_fixture(self) -> None:
+        raw = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
+        a = Anchor.model_validate(raw)
+        assert a.file_path == "src/handlers/router.rs"
+        assert a.anchor_text == "fn handle_request(req: Request) -> Response"
+        # The committed hash must match what compute_hash produces for the
+        # text — protects against accidental drift.
+        assert a.anchor_hash == Anchor.compute_hash(a.anchor_text)
+        assert a.created_at == datetime(2026, 4, 24, 12, 34, 56, tzinfo=timezone.utc)
+
+    def test_round_trip_emits_compatible_shape(self) -> None:
+        raw = json.loads(_FIXTURE_PATH.read_text(encoding="utf-8"))
+        a = Anchor.model_validate(raw)
+        rebuilt = json.loads(a.model_dump_json())
+        # All four keys present, file_path still forward-slash, hash stable.
+        assert set(rebuilt.keys()) == {
+            "file_path",
+            "anchor_text",
+            "anchor_hash",
+            "created_at",
+        }
+        assert "\\" not in rebuilt["file_path"]
+        assert rebuilt["anchor_hash"] == raw["anchor_hash"]

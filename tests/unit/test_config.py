@@ -16,6 +16,7 @@ from memorus.core.config import (
     PrivacyConfig,
     ReflectorConfig,
     RetrievalConfig,
+    VerificationConfig,
 )
 from memorus.core.exceptions import ConfigurationError
 
@@ -389,3 +390,68 @@ class TestConfigSerialization:
         json_str = original.model_dump_json()
         restored = MemorusConfig.model_validate_json(json_str)
         assert restored.privacy.custom_patterns == [r"\bAPI_KEY\b"]
+
+
+# ── VerificationConfig (STORY-R099) ─────────────────────────────────────
+
+
+class TestVerificationConfig:
+    def test_defaults(self) -> None:
+        v = VerificationConfig()
+        assert v.enabled is True
+        assert v.ttl_seconds == 60
+        assert v.project_root is None
+        assert v.verified_trust_score == 1.0
+        assert v.stale_trust_score == 0.3
+        assert v.unverifiable_trust_score == 0.7
+        assert v.policy == "flag"
+
+    def test_attached_to_memorus_config(self) -> None:
+        cfg = MemorusConfig()
+        assert isinstance(cfg.verification, VerificationConfig)
+        assert cfg.verification.enabled is True
+
+    def test_invalid_policy_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            VerificationConfig(policy="ignore")  # not in {flag, demote, drop}
+
+    def test_negative_ttl_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            VerificationConfig(ttl_seconds=-1)
+
+    def test_trust_score_out_of_range_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            VerificationConfig(verified_trust_score=1.5)
+
+    def test_from_dict_routes_verification_into_ace_keys(self) -> None:
+        cfg = MemorusConfig.from_dict(
+            {
+                "ace_enabled": True,
+                "verification": {"enabled": False, "ttl_seconds": 600},
+            }
+        )
+        assert cfg.verification.enabled is False
+        assert cfg.verification.ttl_seconds == 600
+        assert "verification" not in cfg.mem0_config
+
+    def test_legacy_config_without_verification_key(self) -> None:
+        # MemorusConfig built from a pre-R099 dict must still attach the
+        # default VerificationConfig (no key in the input).
+        cfg = MemorusConfig.from_dict({"ace_enabled": True})
+        assert isinstance(cfg.verification, VerificationConfig)
+        assert cfg.verification.enabled is True
+
+    def test_round_trip_preserves_verification(self) -> None:
+        original = MemorusConfig(
+            verification=VerificationConfig(
+                enabled=False,
+                ttl_seconds=120,
+                project_root="src",
+                policy="drop",
+            )
+        )
+        restored = MemorusConfig.model_validate_json(original.model_dump_json())
+        assert restored.verification.enabled is False
+        assert restored.verification.ttl_seconds == 120
+        assert restored.verification.project_root == "src"
+        assert restored.verification.policy == "drop"

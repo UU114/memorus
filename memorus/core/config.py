@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -195,6 +195,36 @@ class ConsolidateConfig(BaseModel):
     )
 
 
+class VerificationConfig(BaseModel):
+    """Memory Trust / Verification Layer configuration (STORY-R099).
+
+    Governs the behavior of the FileSystemVerifier (STORY-R101) and the
+    retrieval-time verification policy (STORY-R102/R103). This Story ships
+    only the data shape — engines plug in later.
+
+    * ``enabled``: master switch; when ``False`` the verifier never runs.
+    * ``ttl_seconds``: cache lifetime for a single bullet's verification
+      result before re-checking against the filesystem.
+    * ``project_root``: root directory that ``Anchor.file_path`` is relative
+      to. If ``None`` at runtime the engine will resolve from the workspace.
+    * ``verified_trust_score`` / ``stale_trust_score`` /
+      ``unverifiable_trust_score``: per-state trust multipliers applied by
+      the scoring pipeline.
+    * ``policy``: how a stale bullet is handled — ``flag`` keeps it with a
+      warning, ``demote`` lowers its rank, ``drop`` removes it entirely.
+
+    Mirrors ``memorus_core::config::VerificationConfig`` on the Rust side.
+    """
+
+    enabled: bool = True
+    ttl_seconds: int = Field(default=60, ge=0)
+    project_root: str | None = None
+    verified_trust_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    stale_trust_score: float = Field(default=0.3, ge=0.0, le=1.0)
+    unverifiable_trust_score: float = Field(default=0.7, ge=0.0, le=1.0)
+    policy: Literal["flag", "demote", "drop"] = "flag"
+
+
 class TopicsConfig(BaseModel):
     """TopicPage aggregation layer configuration (STORY-R097).
 
@@ -239,6 +269,7 @@ class MemorusConfig(BaseModel):
     daemon: DaemonConfig = Field(default_factory=DaemonConfig)
     consolidate: ConsolidateConfig = Field(default_factory=ConsolidateConfig)
     topics: TopicsConfig = Field(default_factory=TopicsConfig)
+    verification: VerificationConfig = Field(default_factory=VerificationConfig)
     mem0_config: dict[str, Any] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -276,6 +307,7 @@ class MemorusConfig(BaseModel):
             "daemon",
             "consolidate",
             "topics",
+            "verification",
         }
         ace_fields: dict[str, Any] = {}
         mem0_fields: dict[str, Any] = {}
