@@ -17,6 +17,11 @@ from typing import Any, Callable, Optional
 from memorus.core.engines.decay.engine import DecayEngine
 from memorus.core.engines.generator.engine import GeneratorEngine
 from memorus.core.engines.generator.score_merger import ScoredBullet
+from memorus.core.engines.verifier.engine import (
+    VerificationEngine,
+    VerificationOutcome,
+)
+from memorus.core.types import BulletMetadata
 from memorus.core.utils.token_counter import TokenBudgetTrimmer
 
 logger = logging.getLogger(__name__)
@@ -102,6 +107,8 @@ class RetrievalPipeline:
         decay_engine: Optional[DecayEngine] = None,
         mem0_search_fn: Optional[Callable[..., Any]] = None,
         update_fn: Optional[Callable[[str, dict[str, object]], None]] = None,
+        verification_engine: Optional[VerificationEngine] = None,
+        bullet_loader: Optional[Callable[[list[str]], list[BulletMetadata]]] = None,
     ) -> None:
         self._generator = generator
         self._trimmer = trimmer
@@ -114,6 +121,18 @@ class RetrievalPipeline:
                 decay_engine=decay_engine,
                 update_fn=update_fn,
             )
+
+        # STORY-R102 — Verifier stage. When ``verification_engine`` is None the
+        # stage is skipped entirely (zero-cost). ``bullet_loader`` fetches full
+        # ``BulletMetadata`` (with anchors) for the trimmed bullet_ids so we
+        # can re-run the verifier without keeping anchor payloads on every
+        # ScoredBullet.
+        self._verification_engine: Optional[VerificationEngine] = verification_engine
+        self._bullet_loader = bullet_loader
+        # Back-write channel for ``verified_at`` / ``verified_status`` so the
+        # next call hits the TTL cache. Shares ``update_fn`` with the
+        # reinforcer by design (both are metadata-only writes).
+        self._update_fn = update_fn
 
     def search(
         self,
@@ -181,9 +200,16 @@ class RetrievalPipeline:
         trimmed = self._run_trimmer(scored)
         logger.debug("RetrievalPipeline step 2: trimmed %d -> %d", len(scored), len(trimmed))
 
-        # Step 3: Async reinforcement (fire-and-forget)
+        # Step 3: STORY-R102 — Verifier. Runs only when a VerificationEngine
+        # was injected. Mutates ``trimmed`` in place by populating
+        # ``verified_status`` + ``trust_score`` and persists ``verified_at``
+        # back to the store so the next call hits the TTL cache.
+        logger.debug("RetrievalPipeline step 3: verifier")
+        self._run_verifier(trimmed)
+
+        # Step 4: Async reinforcement (fire-and-forget)
         hit_ids = [b.bullet_id for b in trimmed]
-        logger.debug("RetrievalPipeline step 3: reinforce %d bullet(s)", len(hit_ids))
+        logger.debug("RetrievalPipeline step 4: reinforce %d bullet(s)", len(hit_ids))
         self._run_reinforcer(hit_ids)
 
         # Determine final mode
@@ -221,6 +247,102 @@ class RetrievalPipeline:
             self._reinforcer.reinforce_async(bullet_ids)
         except Exception as exc:
             logger.warning("RecallReinforcer scheduling failed: %s", exc)
+
+    def _run_verifier(self, trimmed: list[ScoredBullet]) -> None:
+        """STORY-R102 — annotate trimmed results with verification outcomes.
+
+        Runs the injected :class:`VerificationEngine` against the full
+        ``BulletMetadata`` resolved via ``bullet_loader``. Populates each
+        ``ScoredBullet.verified_status`` / ``trust_score`` in place and
+        best-effort writes ``verified_at`` + ``verified_status`` back to the
+        vector store via ``update_fn`` so the next call hits the TTL cache.
+
+        Silently degrades (leaves fields as ``None``) when:
+        * no ``VerificationEngine`` was injected (verifier disabled);
+        * no ``bullet_loader`` can reconstitute full metadata;
+        * the loader or engine raises — search must never fail on verifier.
+
+        Non-critical stage: errors are logged at WARNING and swallowed.
+        """
+        if self._verification_engine is None or not trimmed:
+            return
+        if self._bullet_loader is None:
+            # Without a loader we have no anchors to verify; skip rather than
+            # fabricate a NOT_APPLICABLE status (would lie about the bullet).
+            logger.debug(
+                "Verifier skipped: no bullet_loader wired"
+            )
+            return
+
+        bullet_ids = [b.bullet_id for b in trimmed]
+        try:
+            # Contract: loader returns a list aligned 1-1 by position with
+            # ``bullet_ids``. A ``None`` entry (or missing trailing slot)
+            # means "no metadata available; skip verifier for this row".
+            bullets = self._bullet_loader(bullet_ids)
+        except Exception as exc:
+            logger.warning("Verifier bullet_loader failed: %s", exc)
+            return
+
+        if len(bullets) != len(trimmed):
+            logger.debug(
+                "Verifier loader returned %d for %d ids — falling back to skip",
+                len(bullets), len(trimmed),
+            )
+            return
+
+        # Split into (index_in_trimmed, BulletMetadata) for rows the loader
+        # could resolve; skip ``None`` placeholders.
+        work: list[tuple[int, BulletMetadata]] = []
+        for idx, mb in enumerate(bullets):
+            if mb is None:
+                continue
+            work.append((idx, mb))
+
+        if not work:
+            logger.debug("Verifier skipped: loader produced no usable metadata")
+            return
+
+        try:
+            outcomes = self._verification_engine.verify_many(
+                [mb for _, mb in work]
+            )
+        except Exception as exc:
+            logger.warning("VerificationEngine.verify_many failed: %s", exc)
+            return
+
+        for (idx, _mb), outcome in zip(work, outcomes):
+            sb = trimmed[idx]
+            status_value = outcome.verified_status.value
+            sb.verified_status = status_value
+            sb.trust_score = outcome.trust_score
+            # Best-effort write-back; never block search on persistence failure.
+            self._persist_verification(sb.bullet_id, outcome)
+
+    def _persist_verification(
+        self, bullet_id: str, outcome: VerificationOutcome
+    ) -> None:
+        """Write ``verified_at`` + ``verified_status`` back to the store.
+
+        MVP path (per STORY-R102 tech notes): emits a minimal metadata patch
+        through ``update_fn``. The concrete ``update_fn`` wired by
+        :class:`Memory` merges the patch into the existing mem0 payload.
+        Silent on failure — search must not degrade because a write failed.
+        """
+        if self._update_fn is None or not bullet_id:
+            return
+        try:
+            patch: dict[str, object] = {
+                "memorus_verified_at": outcome.verified_at.isoformat(),
+                "memorus_verified_status": outcome.verified_status.value,
+            }
+            if outcome.trust_score is not None:
+                patch["memorus_trust_score"] = outcome.trust_score
+            self._update_fn(bullet_id, patch)
+        except Exception as exc:
+            logger.debug(
+                "Verifier write-back failed for %s: %s", bullet_id, exc
+            )
 
     def _fallback_search(
         self,

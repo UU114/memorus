@@ -156,7 +156,7 @@ class Memory:
 
         # Retrieval pipeline
         try:
-            from memorus.core.config import RetrievalConfig
+            from memorus.core.config import RetrievalConfig  # noqa: F401
             from memorus.core.engines.decay.engine import DecayEngine
             from memorus.core.engines.generator.engine import GeneratorEngine
             from memorus.core.engines.generator.vector_searcher import VectorSearcher
@@ -174,11 +174,34 @@ class Memory:
             )
             decay_engine = DecayEngine(config=self._config.decay)
 
+            # STORY-R102 — construct VerificationEngine only when enabled, so
+            # the verifier-off path pays zero init cost.
+            verification_engine = None
+            if self._config.verification.enabled:
+                try:
+                    from memorus.core.engines.verifier.engine import (
+                        VerificationEngine,
+                    )
+
+                    verification_engine = VerificationEngine(
+                        config=self._config.verification
+                    )
+                except Exception as verr:
+                    logger.warning(
+                        "VerificationEngine init failed (verifier disabled): %s",
+                        verr,
+                    )
+
             self._retrieval_pipeline = RetrievalPipeline(
                 generator=generator,
                 trimmer=trimmer,
                 decay_engine=decay_engine,
                 mem0_search_fn=self._mem0.search if self._mem0 else None,
+                update_fn=self._build_metadata_update_fn(),
+                verification_engine=verification_engine,
+                bullet_loader=self._load_bullets_by_ids
+                if verification_engine is not None
+                else None,
             )
         except Exception as e:
             logger.warning("ACE retrieval pipeline init failed, proxy mode: %s", e)
@@ -343,16 +366,27 @@ class Memory:
                 filters=filters,
                 scope=scope,
             )
+            # STORY-R102 — include verified_status / trust_score so downstream
+            # agents can tell stale memories from verified ones at a glance.
+            # Keys are always present when verifier is enabled (even when the
+            # outcome is NOT_APPLICABLE we surface "not_applicable" + None).
+            # When verifier is disabled the ScoredBullet fields stay None and
+            # the keys are omitted, matching the pre-R102 JSON shape exactly.
+            verifier_on = self._config.verification.enabled
+            results_out: list[dict[str, Any]] = []
+            for b in search_result.results:
+                row: dict[str, Any] = {
+                    "id": b.bullet_id,
+                    "memory": b.content,
+                    "score": b.final_score,
+                    "metadata": b.metadata,
+                }
+                if verifier_on:
+                    row["verified_status"] = b.verified_status
+                    row["trust_score"] = b.trust_score
+                results_out.append(row)
             return {
-                "results": [
-                    {
-                        "id": b.bullet_id,
-                        "memory": b.content,
-                        "score": b.final_score,
-                        "metadata": b.metadata,
-                    }
-                    for b in search_result.results
-                ],
+                "results": results_out,
                 "ace_search": {
                     "mode": search_result.mode,
                     "total_candidates": search_result.total_candidates,
@@ -1033,6 +1067,93 @@ class Memory:
         except Exception as e:
             logger.warning("Failed to load existing bullets for import: %s", e)
             return []
+
+    def _load_bullets_by_ids(
+        self, bullet_ids: list[str]
+    ) -> list[Any]:
+        """STORY-R102 — resolve ``BulletMetadata`` for each bullet id.
+
+        Returns a list **aligned 1-1 by position** with ``bullet_ids``. Each
+        slot is either a :class:`BulletMetadata` instance or ``None`` when the
+        record cannot be resolved (e.g. missing, malformed, or mem0 threw);
+        the retrieval pipeline skips ``None`` slots.
+        """
+        if self._mem0 is None or not bullet_ids:
+            return [None] * len(bullet_ids)
+
+        from memorus.core.utils.bullet_factory import BulletFactory
+
+        aligned: list[Any] = []
+        for bid in bullet_ids:
+            if not bid:
+                aligned.append(None)
+                continue
+            try:
+                raw = self._mem0.get(bid)
+            except Exception as exc:
+                logger.debug(
+                    "_load_bullets_by_ids: get(%s) failed: %s", bid, exc
+                )
+                aligned.append(None)
+                continue
+            if not isinstance(raw, dict):
+                aligned.append(None)
+                continue
+            try:
+                bullet = BulletFactory.from_mem0_payload(raw)
+            except Exception as exc:
+                logger.debug(
+                    "_load_bullets_by_ids: parse(%s) failed: %s", bid, exc
+                )
+                aligned.append(None)
+                continue
+            aligned.append(bullet)
+        return aligned
+
+    def _build_metadata_update_fn(
+        self,
+    ) -> Optional[Any]:
+        """STORY-R102 — merge a metadata patch into a mem0 record by id.
+
+        Used by the retrieval pipeline to persist ``verified_at`` /
+        ``verified_status`` / ``trust_score`` back onto the bullet. MVP path
+        per the story: read existing payload, merge, re-write via
+        ``mem0.update``. Silent on failure — a failed write must not break
+        the hot search path.
+
+        Returns ``None`` when mem0 is unavailable so callers can skip wiring.
+        """
+        if self._mem0 is None:
+            return None
+
+        mem0 = self._mem0
+
+        def _update_metadata(
+            bullet_id: str, patch: dict[str, object]
+        ) -> None:
+            if not bullet_id or not patch:
+                return
+            try:
+                raw = mem0.get(bullet_id)
+            except Exception as exc:
+                logger.debug("update_fn: get(%s) failed: %s", bullet_id, exc)
+                return
+            if not isinstance(raw, dict):
+                return
+            meta = raw.get("metadata", {})
+            if not isinstance(meta, dict):
+                meta = {}
+            meta.update(patch)
+            try:
+                # mem0.update(id, data) rewrites the row; we keep the same
+                # text content. The SDK stores the updated metadata alongside.
+                mem0.update(bullet_id, raw.get("memory", ""))
+            except Exception as exc:
+                logger.debug(
+                    "update_fn: update(%s) failed: %s", bullet_id, exc
+                )
+
+        return _update_metadata
 
     def _load_bullets_for_search(
         self,

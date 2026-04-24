@@ -54,14 +54,19 @@ class ScoredBullet:
     """Final scored result combining all scoring layers.
 
     Attributes:
-        bullet_id:      Unique identifier for the bullet.
-        content:        Text content of the bullet.
-        final_score:    Composite score after all multipliers.
-        keyword_score:  Raw combined L1+L2+L3 keyword score.
-        semantic_score: L4 semantic similarity score [0.0, 1.0].
-        decay_weight:   Temporal decay factor [0.0, 1.0].
-        recency_boost:  Time-based boost multiplier (>= 1.0).
-        metadata:       Pass-through metadata from BulletInfo.
+        bullet_id:       Unique identifier for the bullet.
+        content:         Text content of the bullet.
+        final_score:     Composite score after all multipliers.
+        keyword_score:   Raw combined L1+L2+L3 keyword score.
+        semantic_score:  L4 semantic similarity score [0.0, 1.0].
+        decay_weight:    Temporal decay factor [0.0, 1.0].
+        recency_boost:   Time-based boost multiplier (>= 1.0).
+        metadata:        Pass-through metadata from BulletInfo.
+        verified_status: STORY-R102 — Verifier-assigned status string
+                         ("verified" | "stale" | "unverifiable" | "not_applicable")
+                         or None when verification is disabled.
+        trust_score:     STORY-R102 — Verifier-assigned trust multiplier in
+                         [0.0, 1.0] or None (NOT_APPLICABLE or disabled).
     """
 
     bullet_id: str
@@ -72,6 +77,9 @@ class ScoredBullet:
     decay_weight: float
     recency_boost: float
     metadata: dict[str, Any] = field(default_factory=dict)
+    # STORY-R102 — Verification signal attached post-trim; None when verifier off.
+    verified_status: str | None = None
+    trust_score: float | None = None
 
 
 class ScoreMerger:
