@@ -1,15 +1,16 @@
 # BMAD Sprint Status
 # Project: Memorus
 # Generated: 2026-02-27
-# Last Updated: 2026-02-27T12:00:00Z
+# Last Updated: 2026-04-26T00:00:00Z
 
 version: "6.0.0"
 project_name: "Memorus"
 project_level: 3
-current_sprint: 5
+current_sprint: 6
 sprint_plan_path: "docs/sprint-plan-memorus-2026-02-27.md"
 # Sprint 5+ 同时维护 Python (memorus/) 与 Rust (memorus-r/) 双 workspace
 # Rust 侧详细计划见 docs/sprint-plan-memorus-r-2026-03-16.md
+# Sprint 6 (EPIC-R018 Memory Trust Layer) 在 docs/stories/STORY-R099.md ~ STORY-R105.md
 
 sprints:
   - sprint_number: 1
@@ -505,13 +506,134 @@ sprints:
         tests: "Python 39/39 + 84 regression / Rust core 550 + team 68 + cli 36"
         notes: "Cross-language apply_purpose score parity at 3-decimal precision"
 
+  - sprint_number: 6
+    start_date: "2026-04-24"
+    end_date: "2026-04-26"
+    capacity_points: 63
+    committed_points: 39
+    completed_points: 39
+    status: "completed"
+    goal: "Memory Trust / Verification Layer (EPIC-R018) — anchors, verifier engine, retrieval integration, stale policies, anchor_mismatch conflict, migration CLI + docs"
+    notes: "7 stories, dual-language (Python memorus/ + Rust memorus-r/), orchestrated by hub via parallel/serial subagent waves. R105 also patched a payload round-trip gap discovered in R102 (verified_status / verified_at / trust_score now persist correctly)."
+    execution_summary:
+      python_tests_passing: 2789
+      rust_tests_passing_workspace: 1630
+      clippy_new_warnings: 0
+      orchestration_waves:
+        wave_1_serial: ["R099"]
+        wave_2_parallel: ["R100", "R101"]
+        wave_3_serial: ["R102"]
+        wave_4_parallel: ["R103", "R104"]
+        wave_5_serial: ["R105"]
+      key_artifacts:
+        - "Anchor + VerifiedStatus + VerificationConfig types (R099)"
+        - "Distiller _extract_anchors at ingest (R100)"
+        - "memorus/core/engines/verifier/engine.py + memorus-providers/src/verifier/filesystem.rs (R101)"
+        - "Retrieval pipeline _run_verifier stage + SearchResult.verified_status/trust_score (R102)"
+        - "VerificationConfig.policy: flag|demote|drop dispatch (R103)"
+        - "ConflictType.ANCHOR_MISMATCH + TeamBullet.last_verified_status column (R104)"
+        - "memorus verify CLI + --rehydrate-anchors + conflicts --type + doc/verification.md (R105)"
+    stories:
+      - story_id: "STORY-R099"
+        title: "共享锚点类型 + VerificationConfig"
+        points: 5
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R099.md"
+        completion_date: "2026-04-25"
+        commits:
+          parent_repo: "4d1ce27 feat(R099)"
+          memorus_r: "df33ed6 feat(R099) (Rust side)"
+        tests: "Python 16 new (2705 pass) / Rust core 15 new (246 pass)"
+        notes: "Foundation: Anchor pydantic + Rust struct, VerifiedStatus snake_case enum, VerificationConfig on MemorusConfig + AceConfig. Renamed Rust last_verified_at -> verified_at with serde alias."
+      - story_id: "STORY-R100"
+        title: "Ingest 期锚点抽取（Reflector / Distiller）"
+        points: 8
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R100.md"
+        completion_date: "2026-04-25"
+        commits:
+          parent_repo: "83089ac feat(R100)"
+          memorus_r: "88fc5bf feat(R100) (Rust side)"
+        tests: "Python 13 new (2075 unit pass) / Rust ace 11 new (466 pass)"
+        notes: "Distiller _extract_anchors with whitelist + project_root walk-up. Curator merge unions anchors by (file_path, anchor_hash). Cross-lang fixture parity."
+      - story_id: "STORY-R101"
+        title: "Verifier Engine（核心比对 + TTL 缓存）"
+        points: 8
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R101.md"
+        completion_date: "2026-04-25"
+        commits:
+          parent_repo: "3b2464e feat(R101)"
+          memorus_r: "4f45d87 feat(R101) (Rust)"
+        tests: "Python 17 new / Rust core 9 + providers 14 = 23 new"
+        notes: "Pure functional VerificationEngine + Verifier trait + FileSystemVerifier. TTL via bullet.verified_at; batch-same-file one-read; sha2 promoted to unconditional in memorus-providers."
+      - story_id: "STORY-R102"
+        title: "Retrieval 路径接入 Verifier"
+        points: 5
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R102.md"
+        completion_date: "2026-04-25"
+        commits:
+          parent_repo: "ba54cd9 feat(R102)"
+          memorus_r: "d2cabcf feat(R102) (Rust)"
+        tests: "Python 4 new (2766 pass) / Rust 7 new across crud + memory (workspace 1602 pass)"
+        notes: "Pipeline _run_verifier between trimmer and reinforcer. SearchResult.verified_status + trust_score in core, MCP/REST forwards. Bindings (python+node) emit new fields; WASM/FFI use own result shapes (not updated)."
+      - story_id: "STORY-R103"
+        title: "Stale 策略分支（flag / demote / drop）"
+        points: 3
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R103.md"
+        completion_date: "2026-04-26"
+        commits:
+          parent_repo: "ae5e68d feat(R103)"
+          memorus_r: "219b827 feat(R103) (Rust)"
+        tests: "Python 15 new / Rust 6 new (workspace ~1600 pass)"
+        notes: "Default flag preserves R102 behaviour. Demote multiplies pre-rerank score (stale x stale_trust_score, unverifiable x unverifiable_trust_score). Drop filters stale only, surfaces dropped_stale_count in ace_search telemetry."
+      - story_id: "STORY-R104"
+        title: "Anchor-mismatch 冲突检测 + Team 治理可视化"
+        points: 5
+        status: "completed"
+        priority: "Could Have"
+        epic: "EPIC-R018+EPIC-R010"
+        story_doc: "docs/stories/STORY-R104.md"
+        completion_date: "2026-04-26"
+        commits:
+          parent_repo: "3c2b15f feat(R104)"
+          memorus_r: "eeb8362 feat(R104) (Rust)"
+        tests: "Python 18 new (2785 pass) / Rust 16 new (workspace 1631 pass)"
+        notes: "ConflictType.ANCHOR_MISMATCH wire-form 'anchor_mismatch'. Jaccard token overlap >=0.5 + verified+stale pair. TeamBullet.last_verified_status/last_verified_at piped through nominator. CLI team list new Verified column. Side-effect: Rust executor.rs ValueDifference wire-form aligned to snake_case."
+      - story_id: "STORY-R105"
+        title: "Migration + CLI verify + 文档"
+        points: 5
+        status: "completed"
+        priority: "Should Have"
+        epic: "EPIC-R018"
+        story_doc: "docs/stories/STORY-R105.md"
+        completion_date: "2026-04-26"
+        commits:
+          parent_repo: "03864e5 feat(R105)"
+          memorus_r: "d4dc29a feat(R105) (Rust)"
+        tests: "Python 4 new (2789 pass) / Rust 11 new (workspace 1630 pass)"
+        notes: "memorus verify CLI with --rehydrate-anchors / --stale-only / --scope / --dry-run / --json. conflicts --type filter. doc/verification.md + memorus-r/doc/verification.md (~316 lines each). README Memory Trust section. Bonus fix: payload_to_bullet/bullet_to_payload now round-trip verified_status/verified_at/trust_score (gap from R102)."
+
 velocity:
   sprint_1: 60
   sprint_2: 62
   sprint_3: 56
   sprint_4: 22
   sprint_5: 78
-  rolling_average: 56
+  sprint_6: 39
+  rolling_average: 53
 
 team:
   size: 4
