@@ -5,6 +5,8 @@ Scans pairs of existing memories for potential contradictions by checking:
 2. Negation asymmetry (one affirms, the other negates)
 3. Opposing keyword pairs (always/never, enable/disable, etc.)
 4. Version conflicts (same tool/library but different version references)
+5. Anchor mismatch: two bullets anchored at the same file region, but one is
+   Verified and the other is Stale (STORY-R104).
 
 Grouped by section for performance on large datasets.
 """
@@ -15,6 +17,7 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from itertools import combinations
 from typing import TYPE_CHECKING
 
@@ -31,6 +34,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+class ConflictType(str, Enum):
+    """Categorises the kind of conflict flagged between two bullets.
+
+    The wire form is the lowercase snake_case string. Must stay aligned
+    with ``memorus_ace::curator::ConflictType`` on the Rust side.
+    """
+
+    OPPOSING_PAIR = "opposing_pair"
+    NEGATION_ASYMMETRY = "negation_asymmetry"
+    VERSION_CONFLICT = "version_conflict"
+    # STORY-R104: two bullets anchored at the same file region where one has
+    # verified_status == "verified" and the other has verified_status == "stale".
+    ANCHOR_MISMATCH = "anchor_mismatch"
+
+
 @dataclass
 class Conflict:
     """A pair of memories that may contradict each other."""
@@ -41,6 +59,9 @@ class Conflict:
     memory_b_content: str
     similarity: float
     reason: str
+    # STORY-R104: optional type classifier. Defaults to ``None`` to preserve
+    # backward compatibility with callers that only read ``reason``.
+    conflict_type: ConflictType | None = None
 
 
 @dataclass
@@ -151,6 +172,30 @@ class ConflictDetector:
                 result.total_pairs_checked += 1
                 sim = CuratorEngine.text_similarity(a.content, b.content)
 
+                # STORY-R104: anchor-mismatch pass runs regardless of text
+                # similarity — the signal is the shared anchor region, not
+                # lexical overlap.
+                if self._detect_anchor_mismatch(a, b):
+                    logger.debug(
+                        "ConflictDetector: ANCHOR_MISMATCH (%s, %s)",
+                        a.bullet_id, b.bullet_id,
+                    )
+                    result.conflicts.append(
+                        Conflict(
+                            memory_a_id=a.bullet_id,
+                            memory_b_id=b.bullet_id,
+                            memory_a_content=a.content,
+                            memory_b_content=b.content,
+                            similarity=sim,
+                            reason=ConflictType.ANCHOR_MISMATCH.value,
+                            conflict_type=ConflictType.ANCHOR_MISMATCH,
+                        )
+                    )
+                    # A single classification per pair is enough — fall through
+                    # to the similarity-gated contradiction checks only when
+                    # anchor-mismatch did NOT fire, to avoid double-counting.
+                    continue
+
                 if sim < self._min_sim or sim > self._max_sim:
                     logger.debug(
                         "ConflictDetector: pair (%s, %s) sim=%.3f OUT of range",
@@ -176,6 +221,7 @@ class ConflictDetector:
                             memory_b_content=b.content,
                             similarity=sim,
                             reason=reason,
+                            conflict_type=_classify_reason(reason),
                         )
                     )
                 else:
@@ -281,3 +327,127 @@ class ConflictDetector:
     def _has_zh_negation(self, text: str) -> bool:
         """Check if text contains Chinese negation characters/words."""
         return any(word in text for word in self.NEGATION_WORDS["zh"])
+
+    # ------------------------------------------------------------------
+    # Anchor-mismatch detection (STORY-R104)
+    # ------------------------------------------------------------------
+
+    def _detect_anchor_mismatch(
+        self, bullet_a: ExistingBullet, bullet_b: ExistingBullet
+    ) -> bool:
+        """Return True iff the bullet pair qualifies as an anchor-mismatch.
+
+        An anchor mismatch fires when ALL of the following hold:
+
+        * both bullets carry at least one anchor dict
+        * some anchor pair (a_i, b_j) shares ``file_path`` AND their
+          ``anchor_text`` values have Jaccard token-set overlap ≥ 0.5
+        * exactly one of the two bullets has ``verified_status == "verified"``
+          and the other has ``verified_status == "stale"`` — any other
+          combination (both verified, both stale, verified↔not_applicable,
+          missing status, etc.) does NOT trigger.
+        """
+        status_a = _extract_verified_status(bullet_a.metadata)
+        status_b = _extract_verified_status(bullet_b.metadata)
+        if not _is_verified_stale_pair(status_a, status_b):
+            return False
+
+        anchors_a = _extract_anchors(bullet_a.metadata)
+        anchors_b = _extract_anchors(bullet_b.metadata)
+        if not anchors_a or not anchors_b:
+            return False
+
+        for a_anchor in anchors_a:
+            for b_anchor in anchors_b:
+                if a_anchor.get("file_path") != b_anchor.get("file_path"):
+                    continue
+                if not a_anchor.get("file_path"):
+                    continue
+                if overlap_ratio(
+                    a_anchor.get("anchor_text", ""),
+                    b_anchor.get("anchor_text", ""),
+                ) >= 0.5:
+                    return True
+        return False
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def overlap_ratio(a: str, b: str) -> float:
+    """Jaccard overlap ratio over whitespace-tokenized word sets.
+
+    Returns ``|A ∩ B| / |A ∪ B|``. Matches the contract described in
+    STORY-R104 §Technical Notes — caller is responsible for supplying
+    two strings to compare (typically two ``Anchor.anchor_text`` values).
+    """
+    tokens_a = set(a.split())
+    tokens_b = set(b.split())
+    union = tokens_a | tokens_b
+    if not union:
+        return 0.0
+    return len(tokens_a & tokens_b) / len(union)
+
+
+def _extract_verified_status(metadata: dict[str, object]) -> str | None:
+    """Return ``verified_status`` from metadata, if present and valid."""
+    if not isinstance(metadata, dict):
+        return None
+    # Prefer the top-level key but fall back to nested BulletMetadata dict
+    # to stay robust against both storage shapes.
+    raw = metadata.get("verified_status")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw
+    # Enum-like objects expose ``.value``; duck-type check.
+    value = getattr(raw, "value", None)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _extract_anchors(metadata: dict[str, object]) -> list[dict[str, object]]:
+    """Return a list of anchor dicts from metadata, robust to shape."""
+    if not isinstance(metadata, dict):
+        return []
+    raw = metadata.get("anchors")
+    if not isinstance(raw, list):
+        return []
+    result: list[dict[str, object]] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            result.append(entry)
+            continue
+        # Support pydantic models that expose model_dump or dict()
+        dumper = getattr(entry, "model_dump", None) or getattr(entry, "dict", None)
+        if callable(dumper):
+            try:
+                dumped = dumper()
+            except Exception:
+                continue
+            if isinstance(dumped, dict):
+                result.append(dumped)
+    return result
+
+
+def _is_verified_stale_pair(a: str | None, b: str | None) -> bool:
+    """Return True iff one side is ``"verified"`` and the other is ``"stale"``."""
+    if a is None or b is None:
+        return False
+    return {a, b} == {"verified", "stale"}
+
+
+def _classify_reason(reason: str) -> ConflictType | None:
+    """Map a textual reason back to its ``ConflictType`` enum value."""
+    if reason.startswith("opposing_pair"):
+        return ConflictType.OPPOSING_PAIR
+    if reason == "negation_asymmetry":
+        return ConflictType.NEGATION_ASYMMETRY
+    if reason.startswith("version_conflict"):
+        return ConflictType.VERSION_CONFLICT
+    if reason == ConflictType.ANCHOR_MISMATCH.value:
+        return ConflictType.ANCHOR_MISMATCH
+    return None

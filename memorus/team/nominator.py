@@ -296,6 +296,16 @@ class Nominator:
             if k != "content" and k not in final:
                 final[k] = v
         final["content"] = final.get("content", content)
+        # STORY-R104: pipe local verification status into the team-shared
+        # display fields. Local ``verified_status`` / ``verified_at`` are
+        # internal — TeamBullet exposes them as ``last_verified_*`` so the
+        # team library never confuses them with its own governance signals.
+        local_status = bullet.get("verified_status")
+        if local_status is not None and "last_verified_status" not in final:
+            final["last_verified_status"] = local_status
+        local_verified_at = bullet.get("verified_at")
+        if local_verified_at is not None and "last_verified_at" not in final:
+            final["last_verified_at"] = local_verified_at
 
         try:
             response = await self._sync_client.nominate_bullet(final)

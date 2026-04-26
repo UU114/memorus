@@ -456,6 +456,115 @@ class TestNominateSubmit:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# team list (STORY-R104)
+# ---------------------------------------------------------------------------
+
+
+class TestTeamList:
+    """Tests for `ace team list` — verified column visualisation."""
+
+    def _make_cache_with_two(self) -> MagicMock:
+        from memorus.team.types import TeamBullet
+
+        ts = datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc)
+        b1 = TeamBullet(
+            origin_id="bullet-aaa",
+            status="approved",
+            last_verified_status="verified",
+            last_verified_at=ts,
+        )
+        b1.content = "fn verify_token uses Claims"
+        b2 = TeamBullet(
+            origin_id="bullet-bbb",
+            status="deprecated",
+            last_verified_status="stale",
+        )
+        b2.content = "fn verify_token uses TokenError"
+        b3 = TeamBullet(
+            origin_id="bullet-ccc",
+            status="approved",
+        )
+        b3.content = "no verify info"
+
+        cache = MagicMock()
+        cache._bullets = {
+            "bullet-aaa": b1,
+            "bullet-bbb": b2,
+            "bullet-ccc": b3,
+        }
+        return cache
+
+    def test_list_team_not_enabled(self, runner: CliRunner) -> None:
+        with patch(_ENSURE, return_value=(None, "Team features not enabled.")):
+            result = runner.invoke(team_group, ["list"])
+        assert result.exit_code != 0
+
+    def test_list_renders_table_with_verified_column(
+        self, runner: CliRunner, enabled_config: TeamConfig
+    ) -> None:
+        cache = self._make_cache_with_two()
+        with (
+            patch(_ENSURE, return_value=(enabled_config, None)),
+            patch(
+                "memorus.team.cache_storage.TeamCacheStorage",
+                return_value=cache,
+            ),
+        ):
+            result = runner.invoke(team_group, ["list"])
+
+        assert result.exit_code == 0, result.output
+        # Header column present
+        assert "Verified" in result.output
+        # Both rows present with expected verified column values
+        assert "bullet-aaa" in result.output
+        assert "verified" in result.output
+        assert "bullet-bbb" in result.output
+        assert "stale" in result.output
+        # Bullet without verified info shows "-"
+        assert "bullet-ccc" in result.output
+        assert "-" in result.output
+
+    def test_list_json_output_includes_verified(
+        self, runner: CliRunner, enabled_config: TeamConfig
+    ) -> None:
+        cache = self._make_cache_with_two()
+        with (
+            patch(_ENSURE, return_value=(enabled_config, None)),
+            patch(
+                "memorus.team.cache_storage.TeamCacheStorage",
+                return_value=cache,
+            ),
+        ):
+            result = runner.invoke(team_group, ["list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        data = json.loads(result.output)
+        assert "bullets" in data
+        rows = {row["id"]: row for row in data["bullets"]}
+        assert rows["bullet-aaa"]["verified"] == "verified"
+        assert rows["bullet-aaa"]["status"] == "approved"
+        assert rows["bullet-bbb"]["verified"] == "stale"
+        assert rows["bullet-ccc"]["verified"] == "-"
+
+    def test_list_empty_cache(
+        self, runner: CliRunner, enabled_config: TeamConfig
+    ) -> None:
+        cache = MagicMock()
+        cache._bullets = {}
+        with (
+            patch(_ENSURE, return_value=(enabled_config, None)),
+            patch(
+                "memorus.team.cache_storage.TeamCacheStorage",
+                return_value=cache,
+            ),
+        ):
+            result = runner.invoke(team_group, ["list"])
+
+        assert result.exit_code == 0
+        assert "No team bullets cached." in result.output
+
+
 class TestEnsureTeamEnabled:
     """Tests for the _ensure_team_enabled helper."""
 

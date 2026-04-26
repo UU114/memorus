@@ -188,3 +188,42 @@ class TestSerialization:
         )
         assert b.origin_id == "bullet-old-123"
         assert b.context_summary == "Redacted context about deployment"
+
+
+# ---------------------------------------------------------------------------
+# STORY-R104: last_verified_status / last_verified_at
+# ---------------------------------------------------------------------------
+
+
+class TestVerifiedDisplayFields:
+    """TeamBullet exposes last-verified mirror fields for governance display."""
+
+    def test_defaults_are_none(self) -> None:
+        b = TeamBullet()
+        assert b.last_verified_status is None
+        assert b.last_verified_at is None
+
+    def test_construct_with_verified_fields(self) -> None:
+        ts = datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc)
+        b = TeamBullet(
+            last_verified_status="verified",
+            last_verified_at=ts,
+        )
+        assert b.last_verified_status == "verified"
+        assert b.last_verified_at == ts
+
+    def test_round_trip_json_preserves_verified_fields(self) -> None:
+        ts = datetime(2026, 4, 24, 12, 0, 0, tzinfo=timezone.utc)
+        b = TeamBullet(
+            author_id="alice",
+            last_verified_status="stale",
+            last_verified_at=ts,
+        )
+        json_str = b.model_dump_json()
+        # Wire form must use snake_case keys to stay aligned with Rust.
+        assert "\"last_verified_status\":\"stale\"" in json_str
+        assert "\"last_verified_at\":" in json_str
+
+        restored = TeamBullet.model_validate_json(json_str)
+        assert restored.last_verified_status == "stale"
+        assert restored.last_verified_at == ts

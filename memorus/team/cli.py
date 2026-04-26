@@ -303,6 +303,63 @@ def team_downvote(bullet_id: str, as_json: bool) -> None:
     _vote_command(bullet_id, upvote=False, as_json=as_json)
 
 
+@team_group.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--limit", type=int, default=50, show_default=True, help="Max rows to show")
+def team_list(as_json: bool, limit: int) -> None:
+    """List team bullets with status and last-verified column (STORY-R104)."""
+    config, err = _ensure_team_enabled()
+    if err:
+        if as_json:
+            click.echo(json.dumps({"error": err}))
+        else:
+            click.echo(f"Error: {err}", err=True)
+        sys.exit(1)
+
+    try:
+        from memorus.team.cache_storage import TeamCacheStorage
+
+        cache = TeamCacheStorage(config)
+        bullets = list(cache._bullets.values())[:limit]
+
+        rows: list[dict[str, Any]] = []
+        for b in bullets:
+            bid = b.origin_id or ""
+            rows.append(
+                {
+                    "id": bid,
+                    "title": (b.content or "")[:60],
+                    "status": b.status,
+                    "verified": (b.last_verified_status or "-"),
+                }
+            )
+
+        if as_json:
+            click.echo(json.dumps({"bullets": rows}, indent=2, default=str))
+            return
+
+        if not rows:
+            click.echo("No team bullets cached.")
+            return
+
+        # Plain table output — fixed-width columns to keep snapshot tests
+        # easy to assert against.
+        click.echo(
+            f"{'ID':<36}  {'Title':<60}  {'Status':<10}  {'Verified':<10}"
+        )
+        click.echo("-" * 124)
+        for r in rows:
+            click.echo(
+                f"{r['id']:<36}  {r['title']:<60}  {r['status']:<10}  {r['verified']:<10}"
+            )
+    except Exception as e:
+        if as_json:
+            click.echo(json.dumps({"error": str(e)}))
+        else:
+            click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
 @team_group.command("backlog")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 def team_backlog(as_json: bool) -> None:

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from memorus.core.config import CuratorConfig
 from memorus.core.engines.curator.conflict import (
     Conflict,
     ConflictDetector,
     ConflictResult,
+    ConflictType,
+    overlap_ratio,
 )
 from memorus.core.engines.curator.engine import ExistingBullet
 
@@ -465,3 +469,187 @@ class TestDefaultConfig:
         detector = ConflictDetector(config)
         assert detector._min_sim == 0.3
         assert detector._max_sim == 0.9
+
+
+# -- ConflictDetector: anchor-mismatch (STORY-R104) --------------------------
+
+
+def _anchor(
+    file_path: str = "src/auth.rs",
+    text: str = "fn verify_token returns Result Claims AuthError",
+) -> dict[str, object]:
+    """Build a minimal anchor dict matching the metadata shape."""
+    return {
+        "file_path": file_path,
+        "anchor_text": text,
+        "anchor_hash": "deadbeef",
+        "created_at": datetime(2026, 1, 1, tzinfo=timezone.utc),
+    }
+
+
+def _bullet_with_metadata(
+    bullet_id: str,
+    content: str,
+    *,
+    verified_status: str | None,
+    anchors: list[dict[str, object]] | None = None,
+    scope: str = "global",
+) -> ExistingBullet:
+    """Build an ExistingBullet with anchor + verified_status metadata."""
+    metadata: dict[str, object] = {}
+    if verified_status is not None:
+        metadata["verified_status"] = verified_status
+    if anchors is not None:
+        metadata["anchors"] = anchors
+    return ExistingBullet(
+        bullet_id=bullet_id,
+        content=content,
+        scope=scope,
+        metadata=metadata,
+    )
+
+
+class TestAnchorMismatchDetection:
+    """Verify the STORY-R104 anchor-mismatch conflict branch."""
+
+    def test_overlap_ratio_basic(self) -> None:
+        # Pure helper: full overlap = 1.0, no overlap = 0.0.
+        assert overlap_ratio("a b c", "a b c") == 1.0
+        assert overlap_ratio("a b c", "x y z") == 0.0
+        # 2 of 4 unique tokens overlap -> 0.5
+        assert abs(overlap_ratio("a b c", "a b d e") - 0.4) < 1e-9
+        assert overlap_ratio("", "") == 0.0
+
+    def test_same_region_verified_vs_stale_triggers(self) -> None:
+        """One Verified, one Stale, identical anchor region -> conflict."""
+        anchors = [_anchor()]
+        a = _bullet_with_metadata(
+            "a",
+            "fn verify_token returns Result<Claims, AuthError>",
+            verified_status="verified",
+            anchors=anchors,
+        )
+        b = _bullet_with_metadata(
+            "b",
+            "fn verify_token returns Result<Claims, TokenError>",
+            verified_status="stale",
+            anchors=anchors,
+        )
+        result = ConflictDetector().detect([a, b])
+        assert len(result.conflicts) == 1
+        c = result.conflicts[0]
+        assert c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        assert c.reason == "anchor_mismatch"
+
+    def test_both_verified_no_trigger(self) -> None:
+        """Same region but both Verified -> no anchor-mismatch."""
+        anchors = [_anchor()]
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="verified", anchors=anchors,
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="verified", anchors=anchors,
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_both_stale_no_trigger(self) -> None:
+        """Same region but both Stale -> no anchor-mismatch."""
+        anchors = [_anchor()]
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="stale", anchors=anchors,
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="stale", anchors=anchors,
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_different_files_no_trigger(self) -> None:
+        """Different file_paths -> no anchor-mismatch even with verified+stale."""
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="verified",
+            anchors=[_anchor(file_path="src/auth.rs")],
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="stale",
+            anchors=[_anchor(file_path="src/session.rs")],
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_no_anchors_either_side_no_trigger(self) -> None:
+        """When neither bullet has anchors -> no anchor-mismatch."""
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="verified", anchors=[],
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="stale", anchors=[],
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_verified_vs_not_applicable_no_trigger(self) -> None:
+        """verified + not_applicable -> not a clear new/old pair, no trigger."""
+        anchors = [_anchor()]
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="verified", anchors=anchors,
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="not_applicable", anchors=anchors,
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_low_overlap_no_trigger(self) -> None:
+        """Same file but anchor_text overlap < 0.5 -> no anchor-mismatch."""
+        a = _bullet_with_metadata(
+            "a", "verify_token returns Claims",
+            verified_status="verified",
+            anchors=[_anchor(text="alpha beta gamma delta")],
+        )
+        b = _bullet_with_metadata(
+            "b", "verify_token returns TokenError",
+            verified_status="stale",
+            anchors=[_anchor(text="totally unrelated tokens here")],
+        )
+        result = ConflictDetector().detect([a, b])
+        anchor_conflicts = [
+            c for c in result.conflicts
+            if c.conflict_type == ConflictType.ANCHOR_MISMATCH
+        ]
+        assert anchor_conflicts == []
+
+    def test_conflict_type_serializes_as_anchor_mismatch(self) -> None:
+        """Cross-language parity: enum value must equal "anchor_mismatch"."""
+        assert ConflictType.ANCHOR_MISMATCH.value == "anchor_mismatch"

@@ -46,6 +46,13 @@ class TeamBullet(BulletMetadata):
     governance_tier: str = GovernanceTier.P2P_REVIEW.value
     nominated_at: datetime | None = None
 
+    # Verified-status mirror (STORY-R104)
+    # Display-only metadata propagated from the local pool when packaging a
+    # bullet for sync. Governance never reads these fields. ``None`` means the
+    # local pool never reported a verification status (treated as "-" in CLI).
+    last_verified_status: str | None = None
+    last_verified_at: datetime | None = None
+
     def __init__(self, **data: Any) -> None:
         """Auto-set schema_version to 2 for TeamBullet instances."""
         data.setdefault("schema_version", 2)
