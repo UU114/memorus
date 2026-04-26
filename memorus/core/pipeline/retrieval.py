@@ -14,6 +14,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
+from memorus.core.config import VerificationConfig
 from memorus.core.engines.decay.engine import DecayEngine
 from memorus.core.engines.generator.engine import GeneratorEngine
 from memorus.core.engines.generator.score_merger import ScoredBullet
@@ -32,14 +33,19 @@ class SearchResult:
     """Result of a retrieval pipeline search.
 
     Attributes:
-        results:          Trimmed list of scored bullets.
-        mode:             Operating mode: "full" | "degraded" | "fallback".
-        total_candidates: Total number of candidates before trimming.
+        results:             Trimmed list of scored bullets.
+        mode:                Operating mode: "full" | "degraded" | "fallback".
+        total_candidates:    Total number of candidates before trimming.
+        dropped_stale_count: STORY-R103 — Number of bullets filtered out when
+                             the active verification policy is ``"drop"``.
+                             Always 0 for ``"flag"`` / ``"demote"``. Exposed
+                             for telemetry / debug via ``ace_search``.
     """
 
     results: list[ScoredBullet]
     mode: str  # "full" | "degraded" | "fallback"
     total_candidates: int = 0
+    dropped_stale_count: int = 0
 
 
 class RecallReinforcer:
@@ -109,6 +115,7 @@ class RetrievalPipeline:
         update_fn: Optional[Callable[[str, dict[str, object]], None]] = None,
         verification_engine: Optional[VerificationEngine] = None,
         bullet_loader: Optional[Callable[[list[str]], list[BulletMetadata]]] = None,
+        verification_config: Optional[VerificationConfig] = None,
     ) -> None:
         self._generator = generator
         self._trimmer = trimmer
@@ -133,6 +140,14 @@ class RetrievalPipeline:
         # next call hits the TTL cache. Shares ``update_fn`` with the
         # reinforcer by design (both are metadata-only writes).
         self._update_fn = update_fn
+        # STORY-R103 — verification policy drives the post-verifier dispatch
+        # (flag / demote / drop). Defaulting to a fresh ``VerificationConfig``
+        # preserves R102 behaviour (``policy="flag"``) for callers that don't
+        # thread the config through.
+        self._verification_config: VerificationConfig = (
+            verification_config if verification_config is not None
+            else VerificationConfig()
+        )
 
     def search(
         self,
@@ -207,6 +222,13 @@ class RetrievalPipeline:
         logger.debug("RetrievalPipeline step 3: verifier")
         self._run_verifier(trimmed)
 
+        # Step 3b: STORY-R103 — apply policy dispatch (flag / demote / drop).
+        # For ``"flag"`` this is a no-op, preserving R102 behaviour byte-for-
+        # byte. When the verifier never ran (disabled path) every row has
+        # ``verified_status is None`` and ``_apply_stale_policy`` is a no-op
+        # regardless of policy value.
+        trimmed, dropped_stale = self._apply_stale_policy(trimmed)
+
         # Step 4: Async reinforcement (fire-and-forget)
         hit_ids = [b.bullet_id for b in trimmed]
         logger.debug("RetrievalPipeline step 4: reinforce %d bullet(s)", len(hit_ids))
@@ -219,6 +241,7 @@ class RetrievalPipeline:
             results=trimmed,
             mode=mode,
             total_candidates=total_candidates,
+            dropped_stale_count=dropped_stale,
         )
 
     # ------------------------------------------------------------------
@@ -318,6 +341,75 @@ class RetrievalPipeline:
             sb.trust_score = outcome.trust_score
             # Best-effort write-back; never block search on persistence failure.
             self._persist_verification(sb.bullet_id, outcome)
+
+    def _apply_stale_policy(
+        self, bullets: list[ScoredBullet]
+    ) -> tuple[list[ScoredBullet], int]:
+        """STORY-R103 — dispatch on ``VerificationConfig.policy``.
+
+        Read the policy ONCE per call (captured locally) and branch:
+
+        * ``"flag"`` (default): no-op; preserves STORY-R102 output exactly.
+        * ``"demote"``: multiply ``final_score`` by the configured trust
+          multiplier for ``stale`` (``stale_trust_score``) and
+          ``unverifiable`` (``unverifiable_trust_score``). ``verified`` and
+          ``not_applicable`` are untouched. Re-sorts by ``final_score`` so
+          the downstream consumer sees the reshuffled order.
+        * ``"drop"``: filter out rows whose ``verified_status == "stale"``.
+          ``unverifiable`` and ``not_applicable`` are explicitly kept — drop
+          is the strictest mode only for definitively-stale rows.
+
+        Returns a tuple of (possibly-mutated list, dropped_stale_count).
+        ``dropped_stale_count`` is 0 for ``"flag"`` / ``"demote"`` and only
+        populated by the drop branch.
+
+        A row with ``verified_status is None`` (verifier disabled or the
+        row-level verifier lookup failed) is always kept and never scaled —
+        treat-as-untouched is the only safe default when the signal is
+        missing.
+        """
+        if not bullets:
+            return bullets, 0
+
+        policy = self._verification_config.policy
+
+        if policy == "flag":
+            # Hot path: zero work, preserves R102 byte-for-byte.
+            return bullets, 0
+
+        if policy == "demote":
+            stale_mult = self._verification_config.stale_trust_score
+            unverifiable_mult = self._verification_config.unverifiable_trust_score
+            for b in bullets:
+                if b.verified_status == "stale":
+                    b.final_score = b.final_score * stale_mult
+                elif b.verified_status == "unverifiable":
+                    b.final_score = b.final_score * unverifiable_mult
+            # Re-sort so the demoted rows sink to the bottom of the final
+            # ranking — callers expect the list to be ordered by final_score.
+            bullets.sort(key=lambda b: b.final_score, reverse=True)
+            return bullets, 0
+
+        if policy == "drop":
+            kept: list[ScoredBullet] = []
+            dropped = 0
+            for b in bullets:
+                if b.verified_status == "stale":
+                    dropped += 1
+                    continue
+                kept.append(b)
+            if dropped:
+                logger.debug(
+                    "stale-policy=drop filtered %d bullet(s)", dropped
+                )
+            return kept, dropped
+
+        # Unknown policy — defensive fallthrough. Pydantic's Literal already
+        # guards this at config-load time; we don't re-raise at retrieval.
+        logger.warning(
+            "Unknown verification.policy=%r; falling back to flag", policy
+        )
+        return bullets, 0
 
     def _persist_verification(
         self, bullet_id: str, outcome: VerificationOutcome

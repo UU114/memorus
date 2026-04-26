@@ -202,6 +202,9 @@ class Memory:
                 bullet_loader=self._load_bullets_by_ids
                 if verification_engine is not None
                 else None,
+                # STORY-R103 — thread the live VerificationConfig through so
+                # the pipeline can dispatch on ``policy`` post-verifier.
+                verification_config=self._config.verification,
             )
         except Exception as e:
             logger.warning("ACE retrieval pipeline init failed, proxy mode: %s", e)
@@ -385,12 +388,20 @@ class Memory:
                     row["verified_status"] = b.verified_status
                     row["trust_score"] = b.trust_score
                 results_out.append(row)
+            ace_search_meta: dict[str, Any] = {
+                "mode": search_result.mode,
+                "total_candidates": search_result.total_candidates,
+            }
+            # STORY-R103 — surface drop-policy filter count so operators can
+            # see how many stale rows were filtered. Always emitted (0 under
+            # flag/demote) — stable shape beats minimal payload here.
+            if verifier_on:
+                ace_search_meta["dropped_stale_count"] = (
+                    search_result.dropped_stale_count
+                )
             return {
                 "results": results_out,
-                "ace_search": {
-                    "mode": search_result.mode,
-                    "total_candidates": search_result.total_candidates,
-                },
+                "ace_search": ace_search_meta,
             }
         except Exception as e:
             logger.warning("ACE search failed, falling back to mem0: %s", e)
