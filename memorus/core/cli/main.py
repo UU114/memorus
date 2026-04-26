@@ -533,8 +533,22 @@ def sweep(ctx: click.Context, as_json: bool) -> None:
 @cli.command()
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.option("--user-id", default=None, help="Filter by user ID")
+@click.option(
+    "--type",
+    "conflict_type",
+    default=None,
+    help=(
+        "Filter by wire-form conflict type "
+        "(e.g. anchor_mismatch, opposing_pair, negation_asymmetry, version_conflict)."
+    ),
+)
 @click.pass_context
-def conflicts(ctx: click.Context, as_json: bool, user_id: str | None) -> None:
+def conflicts(
+    ctx: click.Context,
+    as_json: bool,
+    user_id: str | None,
+    conflict_type: Optional[str],
+) -> None:
     """Detect contradictory memories."""
     memory = _create_memory()
     if memory is None:
@@ -548,13 +562,34 @@ def conflicts(ctx: click.Context, as_json: bool, user_id: str | None) -> None:
         ctx.exit(1)
         return
 
+    # STORY-R105 \u2014 optional --type filter. Match either ``conflict_type``
+    # (when populated, e.g. by R104 anchor_mismatch) or the legacy ``reason``
+    # string so older callers that only set ``reason`` still filter cleanly.
+    if conflict_type:
+        wanted = conflict_type.strip().lower()
+
+        def _matches(c: Any) -> bool:
+            ct = getattr(c, "conflict_type", None)
+            if ct is not None:
+                # ConflictType enum has .value; tolerate plain strings too.
+                ct_value = getattr(ct, "value", ct)
+                if str(ct_value).lower() == wanted:
+                    return True
+            reason = getattr(c, "reason", "") or ""
+            return str(reason).strip().lower() == wanted
+
+        found = [c for c in found if _matches(c)]
+
     if as_json:
         from dataclasses import asdict
 
         click.echo(json.dumps([asdict(c) for c in found], indent=2, ensure_ascii=False))
     else:
         if not found:
-            click.echo("No conflicts detected.")
+            if conflict_type:
+                click.echo(f"No conflicts of type {conflict_type!r} detected.")
+            else:
+                click.echo("No conflicts detected.")
             return
 
         click.echo(f"Detected {len(found)} potential conflict{'s' if len(found) != 1 else ''}:")
@@ -1410,3 +1445,257 @@ def inbox_flush_cmd(ctx: click.Context, as_json: bool) -> None:
         f"(fallback: {payload['bullets_fallback']}, retries: {payload['batches_retried']}, "
         f"failed: {payload['batches_failed']})"
     )
+
+
+# ---------------------------------------------------------------------------
+# verify command (STORY-R105)
+# ---------------------------------------------------------------------------
+
+
+@cli.command("verify")
+@click.option(
+    "--rehydrate-anchors",
+    "rehydrate_anchors",
+    is_flag=True,
+    default=False,
+    help=(
+        "Backfill anchors on bullets where ``anchors == []`` by re-running "
+        "the distiller anchor extractor against ``bullet.content``."
+    ),
+)
+@click.option(
+    "--stale-only",
+    "stale_only",
+    is_flag=True,
+    default=False,
+    help=(
+        "Only verify bullets whose stored verified_status is null or 'stale'. "
+        "Skips already-verified rows."
+    ),
+)
+@click.option(
+    "--scope",
+    default=None,
+    help="Filter to a single scope (e.g. project:myapp).",
+)
+@click.option(
+    "--dry-run",
+    "dry_run",
+    is_flag=True,
+    default=False,
+    help="Compute the report without writing anything to the store.",
+)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--user-id", default=None, help="Filter by user ID")
+@click.pass_context
+def verify_cmd(
+    ctx: click.Context,
+    rehydrate_anchors: bool,
+    stale_only: bool,
+    scope: Optional[str],
+    dry_run: bool,
+    as_json: bool,
+    user_id: Optional[str],
+) -> None:
+    """Verify bullets against the live filesystem and (optionally) backfill anchors.
+
+    Workflow:
+    1. (optional) Rehydrate anchors on legacy bullets where ``anchors == []``.
+    2. Run VerificationEngine.verify_many over (filtered) bullets, write
+       ``verified_status`` + ``verified_at`` (and ``trust_score`` when set)
+       back unless ``--dry-run``.
+    3. Emit a counter report. Single-bullet failures never abort the run —
+       they are logged at WARNING and counted into ``errors``.
+    """
+    import time
+
+    memory = _create_memory()
+    if memory is None:
+        ctx.exit(1)
+        return
+
+    # Load all bullets via mem0.get_all() (ACE-mode aware). When user_id is
+    # set we forward it; the mem0 contract treats missing user_id as global.
+    try:
+        kwargs: dict[str, Any] = {}
+        if user_id:
+            kwargs["user_id"] = user_id
+        raw = memory.get_all(**kwargs)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        ctx.exit(1)
+        return
+
+    all_memories = raw.get("memories", []) if isinstance(raw, dict) else []
+    if scope is not None:
+        all_memories = [
+            m for m in all_memories
+            if isinstance(m, dict)
+            and m.get("metadata", {}).get("memorus_scope", "") == scope
+        ]
+
+    started_ms = time.monotonic()
+
+    counters: dict[str, int] = {
+        "verified": 0,
+        "stale": 0,
+        "unverifiable": 0,
+        "not_applicable": 0,
+        "anchors_added": 0,
+        "errors": 0,
+    }
+
+    # Lazy imports — keeps CLI startup fast when verify is not used.
+    from memorus.core.config import MemorusConfig
+    from memorus.core.engines.reflector.distiller import BulletDistiller
+    from memorus.core.engines.verifier.engine import VerificationEngine
+    from memorus.core.types import BulletMetadata
+    from memorus.core.utils.bullet_factory import BulletFactory
+
+    mcfg = getattr(memory, "_config", None)
+    if not isinstance(mcfg, MemorusConfig):
+        mcfg = MemorusConfig()
+
+    distiller = BulletDistiller(verification=mcfg.verification)
+    project_root = distiller._resolve_project_root()  # noqa: SLF001 — by design
+    engine = VerificationEngine(config=mcfg.verification)
+
+    # mem0 update path — write the patched metadata back through the same
+    # mechanism RetrievalPipeline uses (R102). When ``--dry-run`` we skip
+    # this entirely so the run is provably read-only.
+    update_fn = (
+        memory._build_metadata_update_fn() if not dry_run else None  # noqa: SLF001
+    )
+
+    progress_every = 100
+
+    for idx, mem in enumerate(all_memories, 1):
+        if not isinstance(mem, dict):
+            continue
+        bullet_id = mem.get("id", "")
+        if not bullet_id:
+            continue
+
+        try:
+            bullet = BulletFactory.from_mem0_payload(mem)
+        except Exception as exc:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning("verify: parse failed for %s: %s", bullet_id, exc)
+            counters["errors"] += 1
+            continue
+
+        # Phase 1: anchor rehydration on bullets that were ingested before
+        # the trust layer existed. Only fires when ``anchors == []``.
+        # Note: BulletMetadata stores no content — pull it from the mem0
+        # payload directly. SourceRef carries only turn_hash (no turn body),
+        # so we cannot resurrect the original turn text and rely on the
+        # bullet content alone. Sources are passed for API parity but unused.
+        if rehydrate_anchors and not bullet.anchors:
+            scan_text = mem.get("memory", "") or ""
+            try:
+                fresh_anchors = distiller._extract_anchors(  # noqa: SLF001
+                    scan_text,
+                    list(bullet.sources),
+                    project_root,
+                )
+            except Exception as exc:
+                fresh_anchors = []
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(
+                    "verify: rehydrate failed for %s: %s", bullet_id, exc,
+                )
+
+            if fresh_anchors:
+                bullet.anchors = list(fresh_anchors)
+                counters["anchors_added"] += 1
+                if update_fn is not None:
+                    try:
+                        # Serialise anchors through the BulletMetadata
+                        # round-trip so the mem0 payload encoding matches
+                        # the IngestPipeline write path exactly.
+                        meta_patch = BulletFactory.to_mem0_metadata(
+                            BulletMetadata(anchors=bullet.anchors)
+                        )
+                        update_fn(bullet_id, {"memorus_anchors": meta_patch.get(
+                            "memorus_anchors", []
+                        )})
+                    except Exception as exc:
+                        logger = __import__("logging").getLogger(__name__)
+                        logger.warning(
+                            "verify: anchor write-back failed for %s: %s",
+                            bullet_id, exc,
+                        )
+
+        # Phase 2: verification. ``--stale-only`` filters to bullets whose
+        # stored status is null or 'stale'.
+        if stale_only:
+            stored = bullet.verified_status
+            if stored is not None and stored != "stale":
+                continue
+
+        try:
+            outcome = engine.verify(bullet)
+        except Exception as exc:
+            logger = __import__("logging").getLogger(__name__)
+            logger.warning("verify: verify_many failed for %s: %s", bullet_id, exc)
+            counters["errors"] += 1
+            continue
+
+        status_str = outcome.verified_status.value
+        counters[status_str] = counters.get(status_str, 0) + 1
+
+        if update_fn is not None:
+            try:
+                patch: dict[str, Any] = {
+                    "memorus_verified_status": status_str,
+                    "memorus_verified_at": outcome.verified_at.isoformat(),
+                }
+                if outcome.trust_score is not None:
+                    patch["memorus_trust_score"] = outcome.trust_score
+                update_fn(bullet_id, patch)
+            except Exception as exc:
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(
+                    "verify: status write-back failed for %s: %s",
+                    bullet_id, exc,
+                )
+
+        if idx % progress_every == 0 and not as_json:
+            click.echo(f"  ...processed {idx}/{len(all_memories)} bullets", err=True)
+
+    elapsed_ms = int((time.monotonic() - started_ms) * 1000)
+
+    report = {
+        "verified": counters["verified"],
+        "stale": counters["stale"],
+        "unverifiable": counters["unverifiable"],
+        "not_applicable": counters["not_applicable"],
+        "elapsed_ms": elapsed_ms,
+        "anchors_added": counters["anchors_added"],
+    }
+
+    if as_json:
+        click.echo(json.dumps(report, indent=2))
+        return
+
+    mode_bits = []
+    if rehydrate_anchors:
+        mode_bits.append("rehydrate-anchors")
+    if stale_only:
+        mode_bits.append("stale-only")
+    if scope:
+        mode_bits.append(f"scope={scope}")
+    if dry_run:
+        mode_bits.append("dry-run")
+    mode_str = ", ".join(mode_bits) if mode_bits else "full"
+
+    click.echo(f"Verify report ({mode_str})")
+    click.echo("─" * 40)
+    click.echo(f"  verified:        {report['verified']}")
+    click.echo(f"  stale:           {report['stale']}")
+    click.echo(f"  unverifiable:    {report['unverifiable']}")
+    click.echo(f"  not_applicable:  {report['not_applicable']}")
+    click.echo(f"  anchors_added:   {report['anchors_added']}")
+    click.echo(f"  elapsed_ms:      {report['elapsed_ms']}")
+    if counters["errors"]:
+        click.echo(f"  errors:          {counters['errors']} (see logs)")

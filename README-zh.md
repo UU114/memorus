@@ -154,8 +154,17 @@ m = Memory(config=config)
 - `memorus learn "Always use X"`：手动添加蒸馏规则。
 - `memorus nominate`：审核并提交本地知识到团队。
 - `memorus team sync`：拉取最新的团队知识更新。
-- `memorus conflicts`：检测冲突/矛盾的记忆。
+- `memorus conflicts [--type anchor_mismatch]`：检测冲突/矛盾的记忆，可按 wire-form 类型过滤。
+- `memorus verify [--rehydrate-anchors] [--stale-only] [--scope] [--dry-run] [--json]`：批量验证 / 回迁锚点（详见 [doc/verification.md](doc/verification.md)）。
 - `memorus sweep`：手动触发全量衰退扫描。
+
+---
+
+## Memory Trust（记忆信任层）
+
+EPIC-R018 引入了**记忆信任层**：bullet 在入库时自动抽取 **anchors**（指向源代码片段），检索时由 `VerificationEngine` 比对实时文件状态，给出 `verified / stale / unverifiable / not_applicable` 四种状态以及 `trust_score`。三种策略 (`flag` / `demote` / `drop`) 决定 stale 行如何呈现给上层 prompt。
+
+完整模型、配置、迁移步骤与 LLM prompt 集成模式见 [`doc/verification.md`](doc/verification.md)。Rust 版本对应 [`memorus-r/doc/verification.md`](memorus-r/doc/verification.md)。
 
 ---
 
