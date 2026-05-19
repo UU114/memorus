@@ -90,3 +90,6 @@ Auth: `X-API-Key` header (= `MEMORUS_API_KEY` env)
 | Sprint Plan | `./_bmad-output/planning-artifacts/sprint-plan.md` |
 | Sprint Status | `./_bmad-output/planning-artifacts/sprint-status.yaml` |
 | Stories | `./_bmad-output/planning-artifacts/stories/` |
+
+---
+_BMAD artifacts last review: 2026-05-18 — governance: `lurus/doc/audit/2026-05-18-bmad-output-stale.md`._
