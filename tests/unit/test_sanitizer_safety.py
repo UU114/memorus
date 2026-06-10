@@ -65,8 +65,12 @@ class TestIngestPipelineSanitizerIndependence:
         call_event = mock_reflector.reflect.call_args[0][0]
         assert "super_secret_123" not in call_event.user_message
 
-    def test_sanitizer_failure_nonfatal_in_pipeline(self):
-        """If sanitizer itself crashes, pipeline continues with original content."""
+    def test_sanitizer_failure_drops_ingest_fail_closed(self):
+        """If the sanitizer crashes, the ingest is dropped — never persisted raw.
+
+        Fail-closed: a sanitizer failure must not let unsanitized content
+        bypass the data-at-rest PII layer via the raw-fallback path.
+        """
         mock_sanitizer = MagicMock()
         mock_sanitizer.sanitize.side_effect = RuntimeError("Sanitizer crash")
         mock_reflector = MagicMock()
@@ -80,8 +84,10 @@ class TestIngestPipelineSanitizerIndependence:
         )
 
         result = pipeline.process("normal content", user_id="u1")
-        # Should not crash
-        assert result.raw_fallback is True
+        # Should not crash, but must not persist anything either
+        assert result.raw_fallback is False
+        assert any("sanitizer_failed" in e for e in result.errors)
+        mock_mem0_add.assert_not_called()
 
     def test_no_sanitizer_in_pipeline(self):
         """Pipeline works fine without a sanitizer."""

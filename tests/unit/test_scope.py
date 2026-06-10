@@ -132,11 +132,11 @@ class TestRetrievalConfigScopeBoost:
 
     def test_default_scope_boost(self) -> None:
         cfg = RetrievalConfig()
-        assert cfg.scope_boost == 1.3
+        assert cfg.scope_boost == 1.5
 
     def test_custom_scope_boost(self) -> None:
-        cfg = RetrievalConfig(scope_boost=1.5)
-        assert cfg.scope_boost == 1.5
+        cfg = RetrievalConfig(scope_boost=1.8)
+        assert cfg.scope_boost == 1.8
 
     def test_scope_boost_below_one_rejected(self) -> None:
         from pydantic import ValidationError

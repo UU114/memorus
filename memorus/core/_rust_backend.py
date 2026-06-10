@@ -63,6 +63,139 @@ def _serialize_messages(messages: Any) -> str:
     return str(messages)
 
 
+# mem0-native provider sub-config field maps. Inner ``config`` dicts use
+# mem0-style keys; we project the known ones onto the Rust struct field names
+# and route unknowns into ``extra`` (vector_store) or drop with a warning.
+_VECTOR_STORE_FIELDS = {
+    "provider",
+    "collection_name",
+    "url",
+    "api_key",
+    "path",
+    "embedding_dims",
+}
+_LLM_FIELDS = {
+    "provider",
+    "model",
+    "api_key",
+    "base_url",
+    "temperature",
+    "max_tokens",
+}
+_EMBEDDING_FIELDS = {
+    "provider",
+    "model",
+    "api_key",
+    "base_url",
+    "dimensions",
+}
+
+
+def _map_provider_block(
+    block: dict[str, Any], known: set[str], collect_extra: bool
+) -> dict[str, Any]:
+    """Flatten a mem0-style ``{"provider": P, "config": {...}}`` block.
+
+    Known inner-config keys are lifted to top level; unknown keys are collected
+    into ``extra`` when ``collect_extra`` is True, otherwise dropped.
+    """
+    out: dict[str, Any] = {}
+    if "provider" in block:
+        out["provider"] = block["provider"]
+    inner = block.get("config", {})
+    extra: dict[str, Any] = {}
+    if isinstance(inner, dict):
+        for k, v in inner.items():
+            if k in known:
+                out[k] = v
+            elif collect_extra:
+                extra[k] = v
+    if collect_extra and extra:
+        out["extra"] = extra
+    return out
+
+
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge ``override`` into ``base`` (override wins on leaves)."""
+    out = dict(base)
+    for k, v in override.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _translate_config(config: dict[str, Any] | str | None) -> dict[str, Any] | str | None:
+    """Translate a public config into the nested Rust-backend schema.
+
+    * ``None`` -> ``None`` (binding defaults).
+    * ``str`` (file path) -> passed through unchanged; the Rust ``from_file``
+      path plus serde aliases handle Python-era TOML key names. The flat Python
+      dict format is a code-only shape, never serialized to a file.
+    * ``dict`` -> built via ``MemorusConfig.from_dict(...).to_rust_dict()`` for
+      the ACE/privacy/daemon surface, plus mem0-native ``memory`` keys:
+      a top-level ``"memory"`` dict passes through verbatim, while mem0-style
+      ``vector_store`` / ``llm`` / ``embedder`` blocks are mapped onto
+      ``memory.vector_store`` / ``memory.llm`` / ``memory.embedding``. Any other
+      unknown top-level key is logged at WARNING level (never silently dropped).
+    """
+    from memorus.core.config import MemorusConfig
+
+    if config is None or isinstance(config, str):
+        return config
+
+    cfg = MemorusConfig.from_dict(config)
+    rust: dict[str, Any] = cfg.to_rust_dict()
+
+    # mem0-native memory surface. Recognized keys are mapped; unknowns warn.
+    memory: dict[str, Any] = {}
+    _ace_keys = {
+        "ace_enabled",
+        "reflector",
+        "curator",
+        "decay",
+        "retrieval",
+        "privacy",
+        "integration",
+        "daemon",
+        "consolidate",
+        "topics",
+        "verification",
+    }
+    for key, value in config.items():
+        if key in _ace_keys:
+            continue
+        if key == "ace" and isinstance(value, dict):
+            # Already-canonical nested ace block: deep-merge over the
+            # translated defaults so explicit input wins.
+            rust["ace"] = _deep_merge(rust.get("ace") or {}, value)
+        elif key == "memory" and isinstance(value, dict):
+            # Pass a native Rust memory block through verbatim.
+            memory.update(value)
+        elif key == "vector_store" and isinstance(value, dict):
+            memory["vector_store"] = _map_provider_block(
+                value, _VECTOR_STORE_FIELDS, collect_extra=True
+            )
+        elif key == "llm" and isinstance(value, dict):
+            memory["llm"] = _map_provider_block(
+                value, _LLM_FIELDS, collect_extra=False
+            )
+        elif key == "embedder" and isinstance(value, dict):
+            memory["embedding"] = _map_provider_block(
+                value, _EMBEDDING_FIELDS, collect_extra=False
+            )
+        else:
+            logger.warning(
+                "memorus: config key %r has no Rust-backend equivalent; ignored",
+                key,
+            )
+
+    if memory:
+        rust["memory"] = memory
+    return rust
+
+
 def _build_search_config(
     limit: int | None,
     filters: dict[str, Any] | None,
@@ -151,8 +284,9 @@ class RustBackedMemory:
 
         import memorus_r
 
-        # The binding accepts a dict, a path string, or None directly.
-        self._inner = memorus_r.Memory(config)
+        # Translate the flat Python config into the nested Rust schema before
+        # handing it to the binding; a file-path string or None passes through.
+        self._inner = memorus_r.Memory(_translate_config(config))
 
     @classmethod
     def from_config(cls, config_dict: dict[str, Any]) -> RustBackedMemory:
@@ -459,10 +593,9 @@ class RustBackedAsyncMemory:
 
         import memorus_r
 
-        # The async binding constructor now accepts a dict OR a config-file path
-        # string (mirroring the sync Memory constructor), so dict-based tuning is
-        # honored on the async engine too. None -> binding defaults.
-        self._inner = memorus_r.AsyncMemory(config)
+        # Translate the flat Python config into the nested Rust schema before
+        # handing it to the binding; a file-path string or None passes through.
+        self._inner = memorus_r.AsyncMemory(_translate_config(config))
 
     @classmethod
     def from_config(cls, config_dict: dict[str, Any]) -> RustBackedAsyncMemory:

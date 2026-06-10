@@ -52,8 +52,8 @@ class TestInit:
     """AsyncMemory initialization tests."""
 
     def test_init_default_config(self, async_memory: AsyncMemory) -> None:
-        """AsyncMemory() uses default MemorusConfig (ace_enabled=False)."""
-        assert async_memory._config.ace_enabled is False
+        """AsyncMemory() uses default MemorusConfig (ace_enabled=True)."""
+        assert async_memory._config.ace_enabled is True
         assert isinstance(async_memory._config, MemorusConfig)
 
     def test_from_config(self) -> None:
@@ -212,7 +212,7 @@ class TestConfigProperty:
     def test_config_property(self, async_memory: AsyncMemory) -> None:
         """config property returns the MemorusConfig instance."""
         assert isinstance(async_memory.config, MemorusConfig)
-        assert async_memory.config.ace_enabled is False
+        assert async_memory.config.ace_enabled is True
 
 
 # ---------------------------------------------------------------------------

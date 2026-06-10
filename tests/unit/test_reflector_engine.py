@@ -132,14 +132,14 @@ class TestReflectCodeHeavy:
         assert bullets == []
 
 
-# -- Test 5: Default mode is "hybrid" ----------------------------------------
+# -- Test 5: Default mode is "rules" (offline-capable, converged) ------------
 
 
 class TestModeRulesDefault:
     def test_mode_rules_default(self) -> None:
-        """Default mode is 'hybrid'."""
+        """Default mode is 'rules'; LLM-backed modes are explicit opt-in."""
         engine = ReflectorEngine()
-        assert engine.mode == "hybrid"
+        assert engine.mode == "rules"
 
     def test_mode_explicit_rules(self) -> None:
         """Explicit config mode='rules' is accepted as-is."""

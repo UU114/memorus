@@ -29,7 +29,8 @@ class TestMemorusConfigDefaults:
 
     def test_zero_arg_construction(self) -> None:
         cfg = MemorusConfig()
-        assert cfg.ace_enabled is False
+        # Converged to the Rust source-of-truth (2026-06-10): default is True.
+        assert cfg.ace_enabled is True
         assert isinstance(cfg.reflector, ReflectorConfig)
         assert isinstance(cfg.curator, CuratorConfig)
         assert isinstance(cfg.decay, DecayConfig)
@@ -39,8 +40,11 @@ class TestMemorusConfigDefaults:
         assert isinstance(cfg.daemon, DaemonConfig)
         assert cfg.mem0_config == {}
 
-    def test_ace_enabled_default_false(self) -> None:
-        assert MemorusConfig().ace_enabled is False
+    def test_ace_enabled_default_true(self) -> None:
+        # BEHAVIOR CHANGE (2026-06-10): default flipped False -> True to match
+        # the Rust source-of-truth / locked product target. Configs that omit
+        # ace_enabled now run the ACE pipeline.
+        assert MemorusConfig().ace_enabled is True
 
 
 # ── Sub-config defaults ───────────────────────────────────────────────
@@ -49,7 +53,8 @@ class TestMemorusConfigDefaults:
 class TestReflectorConfigDefaults:
     def test_defaults(self) -> None:
         r = ReflectorConfig()
-        assert r.mode == "hybrid"
+        # Converged default: offline-capable "rules"; LLM modes are opt-in.
+        assert r.mode == "rules"
         assert r.min_score == 30.0
         assert r.max_content_length == 500
         assert r.max_code_lines == 3
@@ -62,7 +67,8 @@ class TestCuratorConfigDefaults:
         # (memorus-core/src/config.rs `default_dedup_threshold`).
         assert c.similarity_threshold == 0.9
         assert c.merge_strategy == "keep_best"
-        assert c.conflict_detection is False
+        # Converged to the Rust source-of-truth (2026-06-10): False -> True.
+        assert c.conflict_detection is True
 
 
 class TestDecayConfigDefaults:
@@ -84,7 +90,9 @@ class TestRetrievalConfigDefaults:
         assert r.recency_boost_days == 7
         assert r.recency_boost_factor == 1.2
         assert r.max_results == 5
-        assert r.token_budget == 2000
+        # Converged to the Rust source-of-truth (2026-06-10).
+        assert r.scope_boost == 1.5
+        assert r.token_budget == 4096
 
 
 class TestPrivacyConfigDefaults:
@@ -112,7 +120,9 @@ class TestIntegrationConfigDefaults:
 class TestDaemonConfigDefaults:
     def test_defaults(self) -> None:
         d = DaemonConfig()
-        assert d.enabled is False
+        # Converged to the Rust source-of-truth (2026-06-10): False -> True.
+        # Safe because the Python daemon client degrades gracefully.
+        assert d.enabled is True
         assert d.idle_timeout_seconds == 300
         assert d.socket_path is None
 
@@ -216,7 +226,8 @@ class TestDaemonValidation:
 class TestFromDict:
     def test_empty_dict(self) -> None:
         cfg = MemorusConfig.from_dict({})
-        assert cfg.ace_enabled is False
+        # ace_enabled default flipped to True (2026-06-10 convergence).
+        assert cfg.ace_enabled is True
         assert cfg.mem0_config == {}
 
     def test_ace_enabled_true(self) -> None:

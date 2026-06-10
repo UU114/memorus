@@ -515,7 +515,7 @@ class TestDaemonProperties:
     def test_default_config(self) -> None:
         d = MemorusDaemon()
         assert d._config.idle_timeout_seconds == 300
-        assert d._config.enabled is False
+        assert d._config.enabled is True
 
 
 # ---------------------------------------------------------------------------

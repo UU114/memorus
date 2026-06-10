@@ -1183,7 +1183,7 @@ class TestDaemonConfigValidation:
 
     def test_default_values(self) -> None:
         config = DaemonConfig()
-        assert config.enabled is False
+        assert config.enabled is True
         assert config.idle_timeout_seconds == 300
         assert config.socket_path is None
 
@@ -1204,7 +1204,7 @@ class TestDaemonConfigValidation:
         """MemorusConfig.daemon defaults to DaemonConfig."""
         config = MemorusConfig()
         assert isinstance(config.daemon, DaemonConfig)
-        assert config.daemon.enabled is False
+        assert config.daemon.enabled is True
 
     def test_memorus_config_from_dict_with_daemon(self) -> None:
         """DaemonConfig can be set through MemorusConfig.from_dict."""

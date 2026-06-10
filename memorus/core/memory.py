@@ -354,6 +354,7 @@ class Memory:
             agent_id=agent_id,
             run_id=run_id,
             scope=effective_scope,
+            **kwargs,
         )
         logger.debug(
             "Memory.add result: added=%d merged=%d skipped=%d fallback=%s errors=%s",
@@ -362,7 +363,7 @@ class Memory:
             ingest_result.errors,
         )
         return {
-            "results": [],
+            "results": ingest_result.raw_results,
             "ace_ingest": {
                 "bullets_added": ingest_result.bullets_added,
                 "raw_fallback": ingest_result.raw_fallback,
@@ -1051,7 +1052,7 @@ class Memory:
             kwargs["agent_id"] = agent_id
 
         raw = mem0.get_all(**kwargs)
-        memories = raw.get("memories", []) if isinstance(raw, dict) else []
+        memories = self._rows_of(raw)
         logger.debug("run_decay_sweep: loaded %d memories", len(memories))
 
         if not memories:
@@ -1363,7 +1364,7 @@ class Memory:
             kwargs["agent_id"] = agent_id
 
         raw = mem0.get_all(**kwargs)
-        memories = raw.get("memories", []) if isinstance(raw, dict) else []
+        memories = self._rows_of(raw)
 
         bullets: list[BulletForSearch] = []
         for mem in memories:

@@ -79,13 +79,13 @@ class TestAddCompat:
 
     def test_add_basic(self, memory: Memory, mem0_mock: MagicMock) -> None:
         result = memory.add("Python is great", user_id="u1")
+        # mem0 >=1.0 dropped `filters` from add(); the proxy must not pass it.
         mem0_mock.add.assert_called_once_with(
             "Python is great",
             user_id="u1",
             agent_id=None,
             run_id=None,
             metadata=None,
-            filters=None,
             prompt=None,
         )
         assert "results" in result
@@ -104,9 +104,12 @@ class TestAddCompat:
         assert mem0_mock.add.call_args.kwargs["metadata"] == meta
 
     def test_add_with_filters(self, memory: Memory, mem0_mock: MagicMock) -> None:
+        # `filters` stays accepted on the Memory.add surface for backward
+        # compatibility, but mem0 >=1.0 add() no longer takes it — the proxy
+        # must swallow it rather than forward it.
         filters = {"user_id": "u1"}
         memory.add("test", filters=filters)
-        assert mem0_mock.add.call_args.kwargs["filters"] == filters
+        assert "filters" not in mem0_mock.add.call_args.kwargs
 
     def test_add_with_prompt(self, memory: Memory, mem0_mock: MagicMock) -> None:
         memory.add("test", prompt="Extract preferences")
@@ -255,10 +258,10 @@ class TestConfigCompat:
         assert m._config.mem0_config["vector_store"]["provider"] == "qdrant"
 
     def test_default_config(self) -> None:
-        """Empty config works (ace_enabled=False by default)."""
+        """Empty config works (ace_enabled=True by default)."""
         m = Memory.__new__(Memory)
         m._config = MemorusConfig.from_dict({})
-        assert m._config.ace_enabled is False
+        assert m._config.ace_enabled is True
 
 
 class TestProxyModeGuarantee:

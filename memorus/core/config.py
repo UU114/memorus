@@ -66,9 +66,15 @@ class ReflectorBatchConfig(BaseModel):
 
 
 class ReflectorConfig(BaseModel):
-    """Configuration for the Reflector engine."""
+    """Configuration for the Reflector engine.
 
-    mode: str = "hybrid"  # "rules" | "llm" | "hybrid"
+    ``mode`` defaults to "rules" (converged with the Rust side): with ACE
+    enabled by default, the default configuration must work fully offline
+    without an LLM provider. "hybrid"/"llm" distillation is an explicit
+    opt-in for users who configure LLM credentials.
+    """
+
+    mode: str = "rules"  # "rules" | "llm" | "hybrid"
     min_score: float = Field(default=30.0, ge=0.0, le=100.0)
     max_content_length: int = Field(default=500, gt=0)
     max_code_lines: int = Field(default=3, gt=0)
@@ -102,7 +108,8 @@ class CuratorConfig(BaseModel):
     # means fewer false-positive dedup merges — the safer default.
     similarity_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
     merge_strategy: str = "keep_best"  # "keep_best" | "merge_content"
-    conflict_detection: bool = False
+    # Converged to the Rust source-of-truth (2026-06-10): False -> True.
+    conflict_detection: bool = True
     conflict_min_similarity: float = Field(default=0.5, ge=0.0, le=1.0)
     conflict_max_similarity: float = Field(default=0.8, ge=0.0, le=1.0)
 
@@ -157,9 +164,13 @@ class RetrievalConfig(BaseModel):
     semantic_weight: float = Field(default=0.4, ge=0.0)
     recency_boost_days: int = Field(default=7, ge=0)
     recency_boost_factor: float = Field(default=1.2, ge=1.0)
-    scope_boost: float = Field(default=1.3, ge=1.0)
+    # Converged to the Rust source-of-truth (2026-06-10): scope_boost 1.3 -> 1.5,
+    # token_budget 2000 -> 4096. token_budget doubling means Rust-backed context
+    # blocks roughly double in size; downstream consumers with their own limits
+    # may truncate.
+    scope_boost: float = Field(default=1.5, ge=1.0)
     max_results: int = Field(default=5, gt=0)
-    token_budget: int = Field(default=2000, gt=0)
+    token_budget: int = Field(default=4096, gt=0)
     graph_expansion: GraphExpansionConfig = Field(default_factory=GraphExpansionConfig)
 
 
@@ -183,7 +194,10 @@ class IntegrationConfig(BaseModel):
 class DaemonConfig(BaseModel):
     """Configuration for the optional background daemon."""
 
-    enabled: bool = False
+    # Converged to the Rust source-of-truth (2026-06-10): False -> True. Safe
+    # to flip because the Python daemon client degrades gracefully when no
+    # daemon is reachable (see memorus/core/daemon/fallback.py).
+    enabled: bool = True
     idle_timeout_seconds: int = Field(default=300, gt=0)
     socket_path: str | None = None
 
@@ -276,7 +290,12 @@ class MemorusConfig(BaseModel):
     and mem0-native keys.
     """
 
-    ace_enabled: bool = False
+    # Converged to the Rust source-of-truth / locked product target
+    # (2026-06-10): False -> True. BEHAVIOR CHANGE: configs that omit
+    # ``ace_enabled`` now run the ACE pipeline (inference on add, distillation
+    # on the pure-Python path). Set ``ace_enabled=False`` explicitly to keep
+    # the old behavior.
+    ace_enabled: bool = True
     reflector: ReflectorConfig = Field(default_factory=ReflectorConfig)
     curator: CuratorConfig = Field(default_factory=CuratorConfig)
     decay: DecayConfig = Field(default_factory=DecayConfig)
@@ -354,3 +373,80 @@ class MemorusConfig(BaseModel):
     def to_mem0_config(self) -> dict[str, Any]:
         """Return a *copy* of the mem0-compatible config dict."""
         return dict(self.mem0_config)
+
+    def to_rust_dict(self) -> dict[str, Any]:
+        """Translate this flat Python config into the nested Rust schema.
+
+        Produces a dict matching ``memorus_core::config::MemorusConfig`` using
+        CANONICAL Rust key names (the serde aliases exist only for raw
+        user-supplied TOML/dicts; the dict path uses canonical names directly).
+
+        Python-side-only keys are intentionally NOT forwarded (they are still
+        honored by the Python adapter/runtime around the Rust engine):
+        ``reflector.llm_model / llm_api_base / llm_api_key / max_eval_tokens /
+        max_distill_tokens / llm_temperature``; ``decay.sweep_on_session_end``;
+        ``integration.*``; ``daemon.idle_timeout_seconds / socket_path``;
+        ``retrieval.keyword_weight / semantic_weight / recency_boost_days /
+        recency_boost_factor / max_results`` (the intentional 2-weight model).
+
+        Unmappable keys whose value differs from the Python default are logged
+        at WARNING level: ``curator.merge_strategy`` (the Rust curator has no
+        ``merge_content`` mode).
+        """
+        r = self.reflector
+        c = self.curator
+        d = self.decay
+        rt = self.retrieval
+
+        # Warn only when a value differs from the Python default, to avoid
+        # noise on default-constructed configs.
+        if c.merge_strategy != "keep_best":
+            logger.warning(
+                "memorus: curator.merge_strategy=%r has no Rust-backend "
+                "equivalent (Rust curator has no merge_content mode); ignored",
+                c.merge_strategy,
+            )
+
+        ace: dict[str, Any] = {
+            "enabled": self.ace_enabled,
+            "reflector": {
+                "mode": r.mode,
+                "min_score": r.min_score,
+                "max_content_length": r.max_content_length,
+                "max_code_lines": r.max_code_lines,
+                "batch": r.batch.model_dump(),
+            },
+            "curator": {
+                "dedup_threshold": c.similarity_threshold,
+                "conflict_detection": c.conflict_detection,
+                "conflict_similarity_min": c.conflict_min_similarity,
+                "conflict_similarity_max": c.conflict_max_similarity,
+            },
+            "decay": {
+                "half_life": d.half_life_days,
+                "boost_factor": d.boost_factor,
+                # Rust protection_days is f64; cast int -> float.
+                "protection_days": float(d.protection_days),
+                "permanent_threshold": d.permanent_threshold,
+                "archive_threshold": d.archive_threshold,
+            },
+            "retrieval": {
+                "scope_boost": rt.scope_boost,
+                "token_budget": rt.token_budget,
+                "graph_expansion": rt.graph_expansion.model_dump(),
+            },
+            "consolidate": self.consolidate.model_dump(),
+            "topics": self.topics.model_dump(),
+            "verification": self.verification.model_dump(),
+        }
+
+        result: dict[str, Any] = {
+            "ace": ace,
+            "privacy": {
+                "redaction_patterns": list(self.privacy.custom_patterns),
+            },
+            "daemon": {
+                "enabled": self.daemon.enabled,
+            },
+        }
+        return result

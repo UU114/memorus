@@ -422,7 +422,7 @@ class TestMemoryStatus:
         assert result["sections"] == {}
         assert result["knowledge_types"] == {}
         assert result["avg_decay_weight"] == 0.0
-        assert result["ace_enabled"] is False
+        assert result["ace_enabled"] is True
 
     def test_status_with_memories(self) -> None:
         """status() computes correct distributions and averages."""

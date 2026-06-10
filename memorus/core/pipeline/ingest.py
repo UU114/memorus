@@ -28,6 +28,9 @@ class IngestResult:
     bullets_skipped: int = 0
     errors: list[str] = field(default_factory=list)
     raw_fallback: bool = False
+    # Per-item rows returned by the underlying store on raw-fallback adds, so
+    # callers keep ids for the records that were actually persisted.
+    raw_results: list[dict[str, Any]] = field(default_factory=list)
 
 
 class IngestPipeline:
@@ -121,14 +124,16 @@ class IngestPipeline:
             # SECURITY: persist the SANITIZED messages, never the raw input. A
             # Reflector failure (LLM timeout, schema error, network drop) must not
             # bypass the data-at-rest PII layer and write secrets verbatim to disk.
-            self._raw_add(sanitized_messages, metadata, user_id, agent_id, run_id, **kwargs)
+            result.raw_results = self._raw_add(
+                sanitized_messages, metadata, user_id, agent_id, run_id, **kwargs
+            )
             result.raw_fallback = True
             return result
 
         if not candidates:
             # No patterns detected -- do raw add
             logger.debug("IngestPipeline step 2: 0 candidates -> raw_fallback")
-            self._raw_add(
+            result.raw_results = self._raw_add(
                 sanitized_messages, metadata, user_id, agent_id, run_id, **kwargs
             )
             result.raw_fallback = True
@@ -367,12 +372,16 @@ class IngestPipeline:
         agent_id: str | None,
         run_id: str | None,
         **kwargs: Any,
-    ) -> None:
-        """Fallback: direct mem0 add without ACE processing."""
+    ) -> list[dict[str, Any]]:
+        """Fallback: direct mem0 add without ACE processing.
+
+        Returns the per-item rows reported by the store ([] on failure or
+        when no add callable is wired), so callers can surface record ids.
+        """
         logger.debug("IngestPipeline._raw_add: fallback mem0 add")
         if self._mem0_add:
             try:
-                self._mem0_add(
+                raw = self._mem0_add(
                     messages,
                     user_id=user_id,
                     agent_id=agent_id,
@@ -380,5 +389,10 @@ class IngestPipeline:
                     metadata=metadata,
                     **kwargs,
                 )
+                if isinstance(raw, dict) and isinstance(raw.get("results"), list):
+                    return [r for r in raw["results"] if isinstance(r, dict)]
+                if isinstance(raw, list):
+                    return [r for r in raw if isinstance(r, dict)]
             except Exception as e:
                 logger.warning("Raw add failed: %s", e)
+        return []

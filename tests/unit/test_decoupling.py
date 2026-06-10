@@ -64,17 +64,20 @@ class TestDecoupling:
         )
 
     def test_ext_is_the_only_memorus_package_importing_team(self) -> None:
-        """Only memorus/ext/ is allowed to reference memorus.team.
+        """Only integration surfaces may reference memorus.team.
 
-        Scan every .py file under memorus/ *except* memorus/ext/ and
-        memorus/team/ itself, and verify zero Team imports.
+        Scan every .py file under memorus/ *except* the integration-surface
+        packages (memorus/ext/, memorus/obsidian_adapter/) and memorus/team/
+        itself, and verify zero Team imports. The rule protects the CORE
+        engine from a Team dependency; adapters sit beside ext, not inside
+        core, so they may consume Team storage directly.
         """
         violations: list[str] = []
         for py_file in sorted(MEMORUS_DIR.rglob("*.py")):
-            # Skip memorus/ext/ (allowed), memorus/team/ (self-ref is fine)
+            # Skip integration surfaces (allowed) and memorus/team/ itself
             rel = py_file.relative_to(MEMORUS_DIR)
             parts = rel.parts
-            if parts and parts[0] in ("ext", "team"):
+            if parts and parts[0] in ("ext", "team", "obsidian_adapter"):
                 continue
 
             source = py_file.read_text(encoding="utf-8")

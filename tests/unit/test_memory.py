@@ -69,8 +69,8 @@ class TestInit:
     """Memory initialization tests."""
 
     def test_init_default_config(self, memory: Memory) -> None:
-        """Memory() uses default MemorusConfig (ace_enabled=False)."""
-        assert memory._config.ace_enabled is False
+        """Memory() uses default MemorusConfig (ace_enabled=True)."""
+        assert memory._config.ace_enabled is True
         assert isinstance(memory._config, MemorusConfig)
 
     def test_init_with_config_ace_enabled(self) -> None:
@@ -447,9 +447,9 @@ class TestConfigProperty:
         """config property returns the MemorusConfig instance."""
         assert isinstance(memory.config, MemorusConfig)
 
-    def test_config_property_ace_disabled_by_default(self, memory: Memory) -> None:
-        """Default config has ace_enabled=False."""
-        assert memory.config.ace_enabled is False
+    def test_config_property_ace_enabled_by_default(self, memory: Memory) -> None:
+        """Default config has ace_enabled=True (converged to Rust source-of-truth)."""
+        assert memory.config.ace_enabled is True
 
     def test_config_property_reflects_ace_enabled(self, ace_memory: Memory) -> None:
         """config property reflects ace_enabled=True when set."""
@@ -540,8 +540,9 @@ class TestSanitization:
 
     def test_add_with_always_sanitize(self, memory: Memory) -> None:
         """When always_sanitize is True and ACE is off, add() sanitizes messages."""
-        # Set up config with always_sanitize
+        # Set up config with always_sanitize and ACE off (proxy-mode sanitize path)
         memory._config = MemorusConfig.from_dict({
+            "ace_enabled": False,
             "privacy": {"always_sanitize": True},
         })
 
