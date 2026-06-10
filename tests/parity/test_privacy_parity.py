@@ -146,6 +146,23 @@ EXPECTED: dict[str, tuple[str, str, str, str]] = {
         "<PRIVATE_KEY>",
         "[REDACTED:PRIVATE_KEY]",
     ),
+    # short token=<value> (< 20 chars, below the oauth_token length floor):
+    # only the keyword-anchored secrets/password_field layer catches it, so this
+    # pins the `token` keyword union added on the Rust side.
+    "token_short": (
+        "token=abc123",
+        "abc123",
+        "<REDACTED>",
+        "[REDACTED:SECRET]",
+    ),
+    # credential=<value> (any length): the `credential` keyword had no other
+    # layer covering it, so this pins the `credential` keyword union.
+    "credential_kv": (
+        "credential=mysecretvalue",
+        "mysecretvalue",
+        "<REDACTED>",
+        "[REDACTED:SECRET]",
+    ),
     # db connection (Python preserves host; both must remove the credentials)
     "db_postgres": (
         "postgres://admin:s3cretPass@db.example.com/mydb",
