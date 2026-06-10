@@ -2,19 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
-
-import logging
 
 from memorus.core.config import ReflectorConfig, VerificationConfig
 from memorus.core.types import (
     Anchor,
-    BulletSection,
     CandidateBullet,
-    KnowledgeType,
     ScoredCandidate,
     SourceRef,
     SourceType,
@@ -74,8 +70,8 @@ class BulletDistiller:
 
     def __init__(
         self,
-        config: Optional[ReflectorConfig] = None,
-        verification: Optional[VerificationConfig] = None,
+        config: ReflectorConfig | None = None,
+        verification: VerificationConfig | None = None,
     ):
         cfg = config or ReflectorConfig()
         self._max_content = cfg.max_content_length
@@ -202,7 +198,7 @@ class BulletDistiller:
     # Anchor extraction (STORY-R100)
     # ------------------------------------------------------------------
 
-    def _resolve_project_root(self) -> Optional[Path]:
+    def _resolve_project_root(self) -> Path | None:
         """Resolve the project root used for anchor path normalization.
 
         Priority:
@@ -243,7 +239,7 @@ class BulletDistiller:
         self,
         content: str,
         sources: list[SourceRef],  # noqa: ARG002 — kept for API parity with spec
-        project_root: Optional[Path],
+        project_root: Path | None,
     ) -> list[Anchor]:
         """Extract region anchors from ``content`` relative to ``project_root``.
 
@@ -336,7 +332,7 @@ class BulletDistiller:
     @staticmethod
     def _normalize_anchor_path(
         raw_path: str, project_root: Path
-    ) -> Optional[str]:
+    ) -> str | None:
         """Normalize *raw_path* to a forward-slash path relative to project_root.
 
         Returns ``None`` when the path refers to a file outside project_root,
@@ -376,7 +372,7 @@ class BulletDistiller:
         return rel.as_posix()
 
     @staticmethod
-    def _safe_read_file(abs_path: Path) -> Optional[str]:
+    def _safe_read_file(abs_path: Path) -> str | None:
         """Read at most _ANCHOR_READ_BYTES from *abs_path* as UTF-8 text.
 
         Returns ``None`` for binary files or read errors. This is best-effort;
@@ -408,7 +404,7 @@ class BulletDistiller:
         return head[:nl] if nl > _ANCHOR_MIN_CHARS else head
 
     @staticmethod
-    def _symbol_window(file_text: str, symbol: str) -> Optional[str]:
+    def _symbol_window(file_text: str, symbol: str) -> str | None:
         """Locate *symbol* in *file_text* and return ±N-line context window.
 
         Window: 1 line before the symbol occurrence + the line itself +
@@ -420,7 +416,7 @@ class BulletDistiller:
             return None
         # Line-based slice: find the line containing the first occurrence.
         lines = file_text.splitlines()
-        hit_idx: Optional[int] = None
+        hit_idx: int | None = None
         for idx, line in enumerate(lines):
             if symbol in line:
                 hit_idx = idx

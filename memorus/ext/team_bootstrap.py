@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 def try_bootstrap_team(
     memory: Any,
-    config_path: Optional[str] = None,
+    config_path: str | None = None,
 ) -> bool:
     """Conditionally inject Team Layer into Memory.
 
@@ -121,7 +121,9 @@ def _build_multi_pool_retriever(
     # Federation pool (remote server)
     if team_config.server_url:
         try:
-            from memorus.team.cache_storage import TeamCacheStorage  # type: ignore[import-not-found]
+            from memorus.team.cache_storage import (
+                TeamCacheStorage,  # type: ignore[import-not-found]
+            )
 
             cache_storage = TeamCacheStorage(team_config)
             pools.append(("federation", cache_storage))

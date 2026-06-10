@@ -11,8 +11,8 @@ from memorus.core.storage.edges import (
     adamic_adar_weight,
     clamp_weight,
     compute_sources_jaccard,
-    record_co_recall,
     recompute_derived_from_edges,
+    record_co_recall,
     write_supersedes_edge,
 )
 

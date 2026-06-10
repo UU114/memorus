@@ -598,6 +598,11 @@ class TeamCacheStorage:
             "enforcement": bullet.enforcement,
             "score": score,
             "source": "team_cache",
+            # Trust provenance: cache content arrives via server sync and is NOT
+            # auto-trusted for mandatory enforcement (fail-closed, lockstep with
+            # the Rust MandatorySource::Synced stamp). Upgraded to "verified" only
+            # by per-bullet HMAC verification (federation transport milestone).
+            "provenance": "synced",
         }
 
 

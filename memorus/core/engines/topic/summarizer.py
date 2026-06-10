@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class Summarizer(Protocol):
         self,
         bullet_contents: list[str],
         *,
-        hint: Optional[str] = None,
+        hint: str | None = None,
     ) -> SummaryResult:
         """Produce a title + ≤200-word summary for the given bullet contents."""
         ...
@@ -92,7 +92,7 @@ class FallbackSummarizer:
         self,
         bullet_contents: list[str],
         *,
-        hint: Optional[str] = None,
+        hint: str | None = None,
     ) -> SummaryResult:
         if not bullet_contents:
             return SummaryResult(
@@ -148,7 +148,7 @@ class LLMSummarizer:
         self,
         bullet_contents: list[str],
         *,
-        hint: Optional[str] = None,
+        hint: str | None = None,
     ) -> SummaryResult:
         if self._client is None:
             return self._fallback.summarize(bullet_contents, hint=hint)
@@ -171,7 +171,7 @@ class LLMSummarizer:
         self,
         bullet_contents: list[str],
         *,
-        hint: Optional[str] = None,
+        hint: str | None = None,
     ) -> str:
         enumerated = "\n".join(f"- {c.strip()}" for c in bullet_contents if c.strip())
         prompt = _PROMPT_TEMPLATE.format(bullets=enumerated)

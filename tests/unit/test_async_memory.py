@@ -81,7 +81,6 @@ class TestProxyMode:
             agent_id=None,
             run_id=None,
             metadata=None,
-            filters=None,
             prompt=None,
         )
         assert result == {"results": [{"id": "1", "memory": "test"}]}
@@ -158,13 +157,14 @@ class TestArgForwarding:
             filters={"user_id": "u1"},
             prompt="custom prompt",
         )
+        # mem0 1.0.x dropped `filters` from add(); accepted for API symmetry
+        # but intentionally NOT forwarded to mem0.add().
         async_memory._mem0.add.assert_called_once_with(
             "test message",
             user_id="u1",
             agent_id="a1",
             run_id="r1",
             metadata={"key": "val"},
-            filters={"user_id": "u1"},
             prompt="custom prompt",
         )
         assert result == {"results": [{"id": "1", "memory": "test"}]}

@@ -7,15 +7,14 @@ operation thereafter.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import shutil
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Sequence
+from typing import Any, Literal
 
 import numpy as np
-
 from mem0.configs.embeddings.base import BaseEmbedderConfig
 from mem0.embeddings.base import EmbeddingBase
 
@@ -108,8 +107,8 @@ class ONNXEmbedder(EmbeddingBase):
 
     def __init__(
         self,
-        config: Optional[BaseEmbedderConfig] = None,
-        model_dir: Optional[str] = None,
+        config: BaseEmbedderConfig | None = None,
+        model_dir: str | None = None,
         max_length: int = _DEFAULT_MAX_LENGTH,
         auto_download: bool = True,
     ) -> None:
@@ -135,8 +134,8 @@ class ONNXEmbedder(EmbeddingBase):
     def embed(
         self,
         text: str,
-        memory_action: Optional[Literal["add", "search", "update"]] = None,
-    ) -> List[float]:
+        memory_action: Literal["add", "search", "update"] | None = None,
+    ) -> list[float]:
         """Embed a single text string into a dense vector.
 
         Args:
@@ -156,7 +155,7 @@ class ONNXEmbedder(EmbeddingBase):
         vector = self._mean_pooling(outputs, tokens["attention_mask"])
         return vector.tolist()
 
-    def embed_batch(self, texts: Sequence[str]) -> List[List[float]]:
+    def embed_batch(self, texts: Sequence[str]) -> list[list[float]]:
         """Embed multiple texts.
 
         Currently processes sequentially; batched ONNX inference can be
@@ -243,7 +242,7 @@ class ONNXEmbedder(EmbeddingBase):
             self.config.embedding_dims,
         )
 
-    def _tokenize(self, text: str) -> Dict[str, np.ndarray]:
+    def _tokenize(self, text: str) -> dict[str, np.ndarray]:
         """Tokenize text and return numpy arrays for ONNX input."""
         encoded = self._tokenizer.encode(text)
         input_ids = np.array([encoded.ids], dtype=np.int64)
@@ -256,7 +255,7 @@ class ONNXEmbedder(EmbeddingBase):
         }
 
     def _mean_pooling(
-        self, model_output: List[np.ndarray], attention_mask: np.ndarray
+        self, model_output: list[np.ndarray], attention_mask: np.ndarray
     ) -> np.ndarray:
         """Apply mean pooling to token embeddings using the attention mask.
 

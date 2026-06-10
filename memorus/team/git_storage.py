@@ -103,8 +103,37 @@ class GitFallbackStorage:
         self._ensure_vectors()
 
         if self._vectors is not None and not self._model_mismatch:
-            return self._vector_search(query, limit)
+            # Hybrid search: vector search captures semantic matches but embeds
+            # ONLY content (ignoring tags) and drops anything below the cosine
+            # threshold — so exact keyword/tag matches (notably CJK queries, where
+            # an exact term can score below the threshold against mixed-language
+            # content) would be silently lost. Union the semantic hits with the
+            # exact keyword/tag matches so an exact match is never dropped.
+            vector_hits = self._vector_search(query, limit)
+            keyword_hits = self._keyword_search(query, limit)
+            return self._merge_search_hits(keyword_hits, vector_hits, limit)
         return self._keyword_search(query, limit)
+
+    @staticmethod
+    def _merge_search_hits(
+        keyword_hits: list[dict[str, Any]],
+        vector_hits: list[dict[str, Any]],
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        """Union keyword (exact) and vector (semantic) hits, dedup by content.
+
+        Exact keyword/tag matches are authoritative and take precedence over a
+        semantic hit for the same bullet; vector-only semantic matches are then
+        appended. Results are ordered by score descending and truncated to
+        ``limit``.
+        """
+        by_content: dict[str, dict[str, Any]] = {}
+        for hit in keyword_hits:
+            by_content[hit["content"]] = hit
+        for hit in vector_hits:
+            by_content.setdefault(hit["content"], hit)
+        merged = sorted(by_content.values(), key=lambda h: -float(h.get("score", 0.0)))
+        return merged[:limit]
 
     def _keyword_search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Keyword-based search against loaded bullets."""
@@ -134,6 +163,10 @@ class GitFallbackStorage:
                 "enforcement": bullet.enforcement,
                 "score": score,
                 "source": "git_fallback",
+                # Attacker-writable file (.ace/playbook.jsonl) → External
+                # provenance, untrusted for mandatory enforcement (lockstep with
+                # the Rust MandatorySource::External demotion).
+                "provenance": "external",
             })
         return results
 
@@ -453,6 +486,10 @@ class GitFallbackStorage:
                 "enforcement": bullet.enforcement,
                 "score": sim,
                 "source": "git_fallback",
+                # Attacker-writable file (.ace/playbook.jsonl) → External
+                # provenance, untrusted for mandatory enforcement (lockstep with
+                # the Rust MandatorySource::External demotion).
+                "provenance": "external",
             })
         return results
 

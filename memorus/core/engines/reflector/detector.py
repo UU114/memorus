@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 from collections import deque
-from typing import Optional
 
 from memorus.core.engines.reflector.patterns import PatternRule
 from memorus.core.types import DetectedPattern, InteractionEvent
@@ -22,7 +21,7 @@ class PatternDetector:
 
     def __init__(
         self,
-        rules: Optional[list[PatternRule]] = None,
+        rules: list[PatternRule] | None = None,
         max_history: int = 20,
     ):
         self._rules: list[PatternRule] = (
@@ -110,16 +109,7 @@ class PatternDetector:
             if not stripped:
                 continue
             # Indented lines
-            if line != line.lstrip() and len(stripped) > 0:
-                code_indicators += 1
-            # Lines with code-like characters
-            elif any(ch in stripped for ch in {"{", "}", ";", "()", "[]", "==", "!=", "->"}):
-                code_indicators += 1
-            # Import/def/class statements
-            elif stripped.startswith(("import ", "from ", "def ", "class ", "return ", "if ", "for ")):
-                code_indicators += 1
-            # Short lines (< 3 words) that look like code
-            elif len(stripped.split()) < 3 and any(c in stripped for c in "=(){};"):
+            if line != line.lstrip() and len(stripped) > 0 or any(ch in stripped for ch in {"{", "}", ";", "()", "[]", "==", "!=", "->"}) or stripped.startswith(("import ", "from ", "def ", "class ", "return ", "if ", "for ")) or len(stripped.split()) < 3 and any(c in stripped for c in "=(){};"):
                 code_indicators += 1
 
         non_empty = sum(1 for line in lines if line.strip())

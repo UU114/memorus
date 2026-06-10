@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from memorus.obsidian_adapter.frontmatter import dump as fm_dump
 

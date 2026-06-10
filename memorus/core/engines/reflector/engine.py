@@ -9,7 +9,6 @@ Supports three operating modes:
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from memorus.core.config import ReflectorConfig, VerificationConfig
 from memorus.core.engines.reflector.detector import PatternDetector
@@ -49,10 +48,10 @@ class ReflectorEngine:
 
     def __init__(
         self,
-        config: Optional[ReflectorConfig] = None,
-        sanitizer: Optional[PrivacySanitizer] = None,
-        inbox: Optional[Inbox] = None,
-        verification: Optional[VerificationConfig] = None,
+        config: ReflectorConfig | None = None,
+        sanitizer: PrivacySanitizer | None = None,
+        inbox: Inbox | None = None,
+        verification: VerificationConfig | None = None,
     ) -> None:
         self._config = config or ReflectorConfig()
         self._detector = PatternDetector()
@@ -66,14 +65,14 @@ class ReflectorEngine:
         self._mode = self._config.mode
 
         # Lazy-init LLM components (only when needed)
-        self._llm_evaluator: Optional[object] = None
-        self._llm_distiller: Optional[object] = None
+        self._llm_evaluator: object | None = None
+        self._llm_distiller: object | None = None
         if self._mode in ("llm", "hybrid"):
             self._init_llm_components()
 
         # STORY-R095 — router / inbox (only meaningful in llm/hybrid modes)
-        self._inbox: Optional[Inbox] = inbox
-        self._router: Optional[ReflectorRouter] = None
+        self._inbox: Inbox | None = inbox
+        self._router: ReflectorRouter | None = None
         if (
             self._mode in ("llm", "hybrid")
             and self._config.batch.batch_enabled
@@ -93,8 +92,8 @@ class ReflectorEngine:
     def _init_llm_components(self) -> None:
         """Initialize LLM evaluator and distiller. Falls back to rules on failure."""
         try:
-            from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
             from memorus.core.engines.reflector.llm_distiller import LLMDistiller
+            from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
 
             self._llm_evaluator = LLMEvaluator(self._config)
             self._llm_distiller = LLMDistiller(self._config)
@@ -156,11 +155,11 @@ class ReflectorEngine:
     # ------------------------------------------------------------------
 
     @property
-    def router(self) -> Optional[ReflectorRouter]:
+    def router(self) -> ReflectorRouter | None:
         return self._router
 
     @property
-    def inbox(self) -> Optional[Inbox]:
+    def inbox(self) -> Inbox | None:
         return self._inbox
 
     # ------------------------------------------------------------------
@@ -199,8 +198,8 @@ class ReflectorEngine:
 
         Falls back to rules pipeline on LLM failure.
         """
-        from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
         from memorus.core.engines.reflector.llm_distiller import LLMDistiller
+        from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator = self._llm_evaluator
         distiller = self._llm_distiller
@@ -253,8 +252,8 @@ class ReflectorEngine:
         If rules detect nothing, LLMEvaluator gets a chance to evaluate directly.
         Falls back to rules pipeline on LLM failure.
         """
-        from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
         from memorus.core.engines.reflector.llm_distiller import LLMDistiller
+        from memorus.core.engines.reflector.llm_evaluator import LLMEvaluator
 
         evaluator = self._llm_evaluator
         distiller = self._llm_distiller

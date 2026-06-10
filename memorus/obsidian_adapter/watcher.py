@@ -116,17 +116,22 @@ class InboxWatcher:
         if not body:
             return self._record(path, SubmitResult(path, kind, "error", "empty body"))
 
-        if self._redactor is not None:
-            try:
-                rr = self._redactor.redact_l1(body)
-            except Exception as e:
-                return self._record(path, SubmitResult(path, kind, "error", f"redactor: {e}"))
-            if rr.is_fully_redacted:
-                return self._record(
-                    path,
-                    SubmitResult(path, kind, "rejected_pii", "content fully redacted"),
-                )
-            body = rr.clean_content
+        # SECURITY (fail-closed): never submit external-vault content without a
+        # redactor. A missing redactor is a hard error, not a silent bypass.
+        if self._redactor is None:
+            return self._record(
+                path, SubmitResult(path, kind, "error", "no redactor configured")
+            )
+        try:
+            rr = self._redactor.redact_l1(body)
+        except Exception as e:
+            return self._record(path, SubmitResult(path, kind, "error", f"redactor: {e}"))
+        if rr.is_fully_redacted:
+            return self._record(
+                path,
+                SubmitResult(path, kind, "rejected_pii", "content fully redacted"),
+            )
+        body = rr.clean_content
 
         if kind == "personal":
             return self._record(path, self._submit_personal(path, doc.meta, body))

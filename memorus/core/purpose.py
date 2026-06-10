@@ -24,9 +24,9 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +64,7 @@ class PoolPurpose:
     keywords: list[str] = field(default_factory=list)
     excluded_topics: list[str] = field(default_factory=list)
     intent_body: str = ""
-    source_path: Optional[Path] = None
+    source_path: Path | None = None
     nominate_threshold: float = DEFAULT_NOMINATE_THRESHOLD
 
     def is_empty(self) -> bool:
@@ -125,7 +125,7 @@ def _token_hits(needles: Iterable[str], haystack_tokens: set[str]) -> bool:
 def apply_purpose(
     base_score: float,
     content: str,
-    purpose: Optional[PoolPurpose],
+    purpose: PoolPurpose | None,
 ) -> float:
     """Apply purpose-driven score adjustment.
 
@@ -172,7 +172,7 @@ _FRONTMATTER_RE = re.compile(
 )
 
 
-def _parse_purpose_text(text: str, source_path: Optional[Path]) -> PoolPurpose:
+def _parse_purpose_text(text: str, source_path: Path | None) -> PoolPurpose:
     """Parse YAML frontmatter + body into a PoolPurpose.
 
     On YAML parse error, warn once and return an empty PoolPurpose (still
@@ -234,7 +234,7 @@ def _as_str_list(value: object) -> list[str]:
     return [str(value).strip()] if str(value).strip() else []
 
 
-def load_purpose_file(path: Path) -> Optional[PoolPurpose]:
+def load_purpose_file(path: Path) -> PoolPurpose | None:
     """Load a single purpose.md file. Returns None if the file is missing."""
     try:
         if not path.is_file():
@@ -269,9 +269,9 @@ def _merge_fields(primary: PoolPurpose, fallback: PoolPurpose) -> PoolPurpose:
 
 
 def resolve_purpose_paths(
-    project_dir: Optional[Path] = None,
-    home_dir: Optional[Path] = None,
-) -> tuple[Optional[Path], Optional[Path]]:
+    project_dir: Path | None = None,
+    home_dir: Path | None = None,
+) -> tuple[Path | None, Path | None]:
     """Return (project_purpose_path, global_purpose_path) candidates.
 
     Existence is not checked here — callers use `load_purpose_file`.
@@ -284,8 +284,8 @@ def resolve_purpose_paths(
 
 
 def load_pool_purpose(
-    project_dir: Optional[Path] = None,
-    home_dir: Optional[Path] = None,
+    project_dir: Path | None = None,
+    home_dir: Path | None = None,
 ) -> PoolPurpose:
     """Load the effective PoolPurpose following the path-priority rules.
 
@@ -331,7 +331,7 @@ def purpose_template(scope: str = "global") -> str:
 # ---------------------------------------------------------------------------
 
 
-def purpose_prompt_context(purpose: Optional[PoolPurpose]) -> str:
+def purpose_prompt_context(purpose: PoolPurpose | None) -> str:
     """Render purpose for LLM prompt injection.
 
     Returns an empty string when the purpose is missing or has no body,

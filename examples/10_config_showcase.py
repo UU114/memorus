@@ -22,7 +22,8 @@ def main() -> None:
     cfg = MemorusConfig()
     assert cfg.ace_enabled is False
     assert cfg.reflector.mode == "rules"
-    assert cfg.curator.similarity_threshold == 0.8
+    # Aligned to Rust source-of-truth: was 0.8, now 0.9.
+    assert cfg.curator.similarity_threshold == 0.9
     assert cfg.decay.half_life_days == 30.0
     assert cfg.retrieval.max_results == 5
     assert cfg.privacy.sanitize_paths is True

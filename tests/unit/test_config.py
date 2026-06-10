@@ -58,7 +58,9 @@ class TestReflectorConfigDefaults:
 class TestCuratorConfigDefaults:
     def test_defaults(self) -> None:
         c = CuratorConfig()
-        assert c.similarity_threshold == 0.8
+        # Aligned to Rust source-of-truth: was 0.8, now 0.9
+        # (memorus-core/src/config.rs `default_dedup_threshold`).
+        assert c.similarity_threshold == 0.9
         assert c.merge_strategy == "keep_best"
         assert c.conflict_detection is False
 

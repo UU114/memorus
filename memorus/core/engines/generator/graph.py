@@ -20,8 +20,9 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable, Protocol
+from typing import Protocol
 
 from memorus.core.engines.generator.score_merger import ScoredBullet
 
@@ -231,7 +232,7 @@ class EdgeStoreProvider:
     protocol and the storage module has no dependency on Generator types.
     """
 
-    def __init__(self, store: "object") -> None:
+    def __init__(self, store: object) -> None:
         # Typed as object to avoid importing SqliteEdgeStore (optional dep).
         self._store = store
 

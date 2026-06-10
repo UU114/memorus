@@ -21,8 +21,8 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from typing import Iterable, Optional, Sequence
 
 from memorus.core.storage.edges import EdgeType, SqliteEdgeStore
 
@@ -42,7 +42,7 @@ class BulletNode:
     content: str = ""
     decay_weight: float = 1.0
     archived: bool = False
-    embedding: Optional[Sequence[float]] = None
+    embedding: Sequence[float] | None = None
 
 
 @dataclass
@@ -299,7 +299,7 @@ class TopicClusterer:
         *,
         min_cluster_size: int = 3,
         similarity_edge_threshold: float = 0.6,
-        edge_store: Optional[SqliteEdgeStore] = None,
+        edge_store: SqliteEdgeStore | None = None,
     ) -> None:
         if min_cluster_size < 1:
             raise ValueError("min_cluster_size must be >= 1")

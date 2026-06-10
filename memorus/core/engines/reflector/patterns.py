@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 import re
 from abc import ABC, abstractmethod
-from typing import Optional, Sequence
+from collections.abc import Sequence
 
 from memorus.core.types import DetectedPattern, InteractionEvent
 
@@ -35,7 +35,7 @@ class PatternRule(ABC):
     @abstractmethod
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         """Return a :class:`DetectedPattern` if *event* matches, else ``None``."""
         ...
 
@@ -69,7 +69,7 @@ class ErrorFixRule(PatternRule):
 
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         user_lower = event.user_message.lower()
         has_error_context = any(kw in user_lower for kw in self.ERROR_KEYWORDS)
 
@@ -127,7 +127,7 @@ class RetrySuccessRule(PatternRule):
 
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         if len(history) < 1:
             logger.debug("RetrySuccessRule: no history, skipping")
             return None
@@ -198,7 +198,7 @@ class ConfigChangeRule(PatternRule):
 
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         combined = f"{event.user_message} {event.assistant_message}".lower()
         has_config_keyword = any(kw in combined for kw in self.CONFIG_KEYWORDS)
         has_config_file = any(ext in combined for ext in self.CONFIG_EXTENSIONS)
@@ -251,7 +251,7 @@ class NewToolRule(PatternRule):
 
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         combined = f"{event.user_message} {event.assistant_message}"
         tool_matches: list[str] = self.TOOL_PATTERNS.findall(combined)
 
@@ -307,7 +307,7 @@ class RepetitiveOpRule(PatternRule):
 
     def check(
         self, event: InteractionEvent, history: Sequence[InteractionEvent]
-    ) -> Optional[DetectedPattern]:
+    ) -> DetectedPattern | None:
         if len(history) < self.MIN_OCCURRENCES - 1:
             logger.debug("RepetitiveOpRule: history too short (%d < %d)", len(history), self.MIN_OCCURRENCES - 1)
             return None

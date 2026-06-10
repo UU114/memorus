@@ -18,8 +18,8 @@ Pipeline:
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Optional
 
 from memorus.core.config import TopicsConfig
 from memorus.core.engines.topic.clusterer import (
@@ -212,9 +212,9 @@ class TopicEngine:
         )
         return page
 
-    def _find_drift_target(self, cluster: Cluster) -> Optional[TopicPage]:
+    def _find_drift_target(self, cluster: Cluster) -> TopicPage | None:
         """Find the best-matching existing page by id overlap."""
-        best: Optional[TopicPage] = None
+        best: TopicPage | None = None
         best_overlap = 0
         cluster_ids = set(cluster.bullet_ids)
         if not cluster_ids:

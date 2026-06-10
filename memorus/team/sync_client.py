@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -102,7 +102,7 @@ class IndexResponse(BaseModel):
     """Response from pull_index endpoint."""
 
     bullets: list[BulletIndexEntry] = Field(default_factory=list)
-    cursor: Optional[str] = None
+    cursor: str | None = None
 
 
 class TaxonomyTag(BaseModel):
@@ -110,7 +110,7 @@ class TaxonomyTag(BaseModel):
 
     name: str
     aliases: list[str] = Field(default_factory=list)
-    parent: Optional[str] = None
+    parent: str | None = None
 
 
 class TaxonomyResponse(BaseModel):

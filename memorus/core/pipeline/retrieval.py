@@ -11,8 +11,9 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any
 
 from memorus.core.config import VerificationConfig
 from memorus.core.engines.decay.engine import DecayEngine
@@ -58,7 +59,7 @@ class RecallReinforcer:
     def __init__(
         self,
         decay_engine: DecayEngine,
-        update_fn: Optional[Callable[[str, dict[str, object]], None]] = None,
+        update_fn: Callable[[str, dict[str, object]], None] | None = None,
     ) -> None:
         self._decay_engine = decay_engine
         self._update_fn = update_fn
@@ -109,20 +110,20 @@ class RetrievalPipeline:
     def __init__(
         self,
         generator: GeneratorEngine,
-        trimmer: Optional[TokenBudgetTrimmer] = None,
-        decay_engine: Optional[DecayEngine] = None,
-        mem0_search_fn: Optional[Callable[..., Any]] = None,
-        update_fn: Optional[Callable[[str, dict[str, object]], None]] = None,
-        verification_engine: Optional[VerificationEngine] = None,
-        bullet_loader: Optional[Callable[[list[str]], list[BulletMetadata]]] = None,
-        verification_config: Optional[VerificationConfig] = None,
+        trimmer: TokenBudgetTrimmer | None = None,
+        decay_engine: DecayEngine | None = None,
+        mem0_search_fn: Callable[..., Any] | None = None,
+        update_fn: Callable[[str, dict[str, object]], None] | None = None,
+        verification_engine: VerificationEngine | None = None,
+        bullet_loader: Callable[[list[str]], list[BulletMetadata]] | None = None,
+        verification_config: VerificationConfig | None = None,
     ) -> None:
         self._generator = generator
         self._trimmer = trimmer
         self._mem0_search_fn = mem0_search_fn
 
         # Build reinforcer only when decay engine is available
-        self._reinforcer: Optional[RecallReinforcer] = None
+        self._reinforcer: RecallReinforcer | None = None
         if decay_engine is not None:
             self._reinforcer = RecallReinforcer(
                 decay_engine=decay_engine,
@@ -134,7 +135,7 @@ class RetrievalPipeline:
         # ``BulletMetadata`` (with anchors) for the trimmed bullet_ids so we
         # can re-run the verifier without keeping anchor payloads on every
         # ScoredBullet.
-        self._verification_engine: Optional[VerificationEngine] = verification_engine
+        self._verification_engine: VerificationEngine | None = verification_engine
         self._bullet_loader = bullet_loader
         # Back-write channel for ``verified_at`` / ``verified_status`` so the
         # next call hits the TTL cache. Shares ``update_fn`` with the
@@ -153,11 +154,11 @@ class RetrievalPipeline:
         self,
         query: str,
         bullets: Any = None,
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
         limit: int = 5,
-        filters: Optional[dict[str, Any]] = None,
-        scope: Optional[str] = None,
+        filters: dict[str, Any] | None = None,
+        scope: str | None = None,
     ) -> SearchResult:
         """Run the full retrieval pipeline.
 
@@ -439,10 +440,10 @@ class RetrievalPipeline:
     def _fallback_search(
         self,
         query: str,
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
         limit: int = 5,
-        filters: Optional[dict[str, Any]] = None,
+        filters: dict[str, Any] | None = None,
     ) -> SearchResult:
         """Fallback to mem0 native search when Generator fails."""
         if self._mem0_search_fn is None:

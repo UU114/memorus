@@ -8,7 +8,6 @@ Isolates individual hook failures with WARNING-level logging.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from memorus.core.config import IntegrationConfig
 from memorus.core.integration.hooks import (
@@ -30,7 +29,7 @@ class IntegrationManager:
     IntegrationConfig controls which hook categories are active.
     """
 
-    def __init__(self, config: Optional[IntegrationConfig] = None) -> None:
+    def __init__(self, config: IntegrationConfig | None = None) -> None:
         self._config = config or IntegrationConfig()
         self._hooks: list[BaseHook] = []
 
@@ -62,7 +61,7 @@ class IntegrationManager:
 
     # -- Fire methods -------------------------------------------------------
 
-    async def fire_pre_inference(self, input: str) -> Optional[ContextInjection]:
+    async def fire_pre_inference(self, input: str) -> ContextInjection | None:
         """Execute all PreInferenceHook instances if auto_recall is enabled.
 
         Returns the result from the first successful hook, or None if

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from memorus.core.config import ReflectorConfig
 from memorus.core.types import (
@@ -68,7 +67,7 @@ class LLMEvaluator:
         self._max_tokens = config.max_eval_tokens
         self._temperature = config.llm_temperature
 
-    def evaluate(self, event: InteractionEvent) -> Optional[ScoredCandidate]:
+    def evaluate(self, event: InteractionEvent) -> ScoredCandidate | None:
         """Evaluate an interaction via LLM. Returns None if not worth recording.
 
         Gracefully returns None on any LLM/parse failure.
@@ -114,7 +113,7 @@ class LLMEvaluator:
 
     def _parse_response(
         self, raw: str, event: InteractionEvent
-    ) -> Optional[ScoredCandidate]:
+    ) -> ScoredCandidate | None:
         """Parse LLM JSON response into ScoredCandidate."""
         # Strip markdown fences if present
         text = raw.strip()

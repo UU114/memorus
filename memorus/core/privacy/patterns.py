@@ -11,11 +11,19 @@ BUILTIN_PATTERNS: list[tuple[str, str, str]] = [
         r"-----BEGIN[A-Z ]*PRIVATE KEY-----[\s\S]*?-----END[A-Z ]*PRIVATE KEY-----",
         "<PRIVATE_KEY>",
     ),
-    # 2. Bearer/JWT tokens
+    # 2. Bearer JWT tokens (Bearer-prefixed -- more specific, must run before
+    #    the bare jwt layer below so it wins on "Bearer eyJ...").
     (
         "bearer_token",
         r"Bearer\s+eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?",
         "<BEARER_TOKEN>",
+    ),
+    # 2b. Bare JWT (NOT Bearer-prefixed). UNION with Rust `jwt` layer: a JWT that
+    #     is not preceded by "Bearer " was previously missed by Python entirely.
+    (
+        "jwt",
+        r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}",
+        "<JWT>",
     ),
     # 3. Anthropic API Key (before OpenAI -- sk-ant is more specific than sk-)
     (
@@ -28,6 +36,13 @@ BUILTIN_PATTERNS: list[tuple[str, str, str]] = [
         "openai_key",
         r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}",
         "<OPENAI_KEY>",
+    ),
+    # 4b. Groq API Key. UNION with Rust `api_key` alternation (gsk_); previously
+    #     missed by Python.
+    (
+        "groq_key",
+        r"gsk_[A-Za-z0-9]{20,}",
+        "<GROQ_KEY>",
     ),
     # 5. GitHub Token
     (
@@ -66,6 +81,29 @@ BUILTIN_PATTERNS: list[tuple[str, str, str]] = [
         "password_field",
         r"((?:password|passwd|secret|token|credential)\s*[=:]\s*)[^\s,;\"']+",
         r"\1<REDACTED>",
+    ),
+    # 10b-e: General PII (UNION with Rust email/phone/credit_card/ssn layers;
+    # previously missing from Python). Placed after the keyword-anchored secret
+    # layers (so labelled secrets win) but before the path layers.
+    (
+        "email",
+        r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}",
+        "<EMAIL>",
+    ),
+    (
+        "phone",
+        r"\+\d{1,3}[\-.\s]?\d{3,14}",
+        "<PHONE>",
+    ),
+    (
+        "credit_card",
+        r"\d{4}[\-\s]?\d{4}[\-\s]?\d{4}[\-\s]?\d{4}",
+        "<CREDIT_CARD>",
+    ),
+    (
+        "ssn",
+        r"\d{3}\-\d{2}\-\d{4}",
+        "<SSN>",
     ),
     # 11. Windows user path
     (

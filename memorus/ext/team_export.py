@@ -8,13 +8,13 @@ The CLI calls ``export_team_index`` via this module instead.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def export_team_index(
     *,
-    scope: Optional[str],
-    out_dir: Optional[str],
+    scope: str | None,
+    out_dir: str | None,
     generator_version: str,
 ) -> tuple[Path, int]:
     """Generate ``.ace/index.md`` from an existing ``.ace/playbook.jsonl``.

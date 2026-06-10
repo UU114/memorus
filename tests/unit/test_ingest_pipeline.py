@@ -282,6 +282,31 @@ class TestReflectorFailureFallback:
         call_args = mem0_add.call_args
         assert call_args[0][0] == messages  # original messages passed through
 
+    def test_reflector_failure_persists_sanitized_not_raw(self) -> None:
+        """SECURITY: a Reflector crash must persist SANITIZED messages, never the
+        raw input — otherwise secrets bypass the data-at-rest PII layer."""
+        sanitizer = PrivacySanitizer()
+        mock_reflector = MagicMock()
+        mock_reflector.reflect.side_effect = RuntimeError("LLM timeout")
+        mem0_add = MagicMock()
+
+        pipeline = IngestPipeline(
+            reflector=mock_reflector,
+            sanitizer=sanitizer,
+            mem0_add_fn=mem0_add,
+        )
+
+        secret = "sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"
+        result = pipeline.process(f"My API key is {secret}", user_id="u1")
+
+        assert result.raw_fallback is True
+        mem0_add.assert_called_once()
+        # The content handed to mem0 must be scrubbed, not the raw secret.
+        persisted = mem0_add.call_args[0][0]
+        persisted_text = persisted if isinstance(persisted, str) else str(persisted)
+        assert secret not in persisted_text
+        assert "<OPENAI_KEY>" in persisted_text
+
 
 # ---------------------------------------------------------------------------
 # Test 7: Sanitizer runs before Reflector
@@ -334,15 +359,16 @@ class TestSanitizerRunsBeforeReflector:
 
 
 # ---------------------------------------------------------------------------
-# Test 8: Sanitizer failure is non-fatal
+# Test 8: Sanitizer failure is fail-closed
 # ---------------------------------------------------------------------------
 
 
-class TestSanitizerFailureNonfatal:
-    """Sanitizer raises -> original messages passed through to Reflector."""
+class TestSanitizerFailureFailClosed:
+    """Sanitizer raises -> ingest is dropped; raw content is never persisted."""
 
-    def test_sanitizer_failure_nonfatal(self) -> None:
-        """When sanitizer raises, pipeline continues with original messages."""
+    def test_sanitizer_failure_drops_ingest(self) -> None:
+        """SECURITY: a sanitizer crash must NOT fall through to persisting the
+        raw content — the ingest is dropped and the error is reported."""
         mock_sanitizer = MagicMock()
         mock_sanitizer.sanitize.side_effect = RuntimeError("sanitizer crash")
 
@@ -359,12 +385,11 @@ class TestSanitizerFailureNonfatal:
         original = "raw message with secret"
         result = pipeline.process(original)
 
-        # Pipeline should still succeed
-        assert result.bullets_added == 1
-        assert result.errors == []
-        # Reflector received the original (unsanitised) message
-        call_args = mock_reflector.reflect.call_args[0][0]
-        assert call_args.user_message == original
+        # Nothing is persisted, and the Reflector never even sees the raw input.
+        assert result.bullets_added == 0
+        mem0_add.assert_not_called()
+        mock_reflector.reflect.assert_not_called()
+        assert any("sanitizer_failed" in e for e in result.errors)
 
 
 # ---------------------------------------------------------------------------

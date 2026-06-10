@@ -29,10 +29,11 @@ import os
 import tempfile
 import threading
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +57,8 @@ class InboxEntry:
     status: str = "pending"  # pending | in_progress | consumed | skipped
     correction_detected: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
-    consumed_at: Optional[str] = None
-    assistant_message: Optional[str] = None  # paired response, when known
+    consumed_at: str | None = None
+    assistant_message: str | None = None  # paired response, when known
 
     # --------------------------------------------------------------
     # Serialisation helpers
@@ -87,7 +88,7 @@ class InboxEntry:
         return d
 
     @classmethod
-    def from_dict(cls, raw: dict[str, Any]) -> "InboxEntry":
+    def from_dict(cls, raw: dict[str, Any]) -> InboxEntry:
         return cls(
             id=str(raw["id"]),
             conversation_id=str(raw.get("conversation_id", "")),
@@ -161,7 +162,7 @@ class Inbox:
         with self._lock:
             return self._read_all()
 
-    def oldest_pending_age_seconds(self, now: Optional[datetime] = None) -> Optional[float]:
+    def oldest_pending_age_seconds(self, now: datetime | None = None) -> float | None:
         """Return age in seconds of the oldest pending entry, or None if empty."""
         now = now or datetime.now(timezone.utc)
         pendings = self.list_pending()
@@ -207,10 +208,9 @@ class Inbox:
 
     def append(self, entry: InboxEntry) -> None:
         """O(1) append of a new pending entry."""
-        with self._lock:
-            with self._path.open("a", encoding="utf-8") as f:
-                f.write(entry.to_json())
-                f.write("\n")
+        with self._lock, self._path.open("a", encoding="utf-8") as f:
+            f.write(entry.to_json())
+            f.write("\n")
         logger.debug(
             "Inbox.append: id=%s conv=%s offset=%d corr=%s",
             entry.id, entry.conversation_id, entry.turn_offset, entry.correction_detected,
@@ -370,8 +370,8 @@ def make_entry(
     turn_offset: int = 0,
     role: str = "user",
     correction_detected: bool = False,
-    timestamp: Optional[datetime] = None,
-    metadata: Optional[dict[str, Any]] = None,
+    timestamp: datetime | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> InboxEntry:
     """Build an ``InboxEntry`` from an InteractionEvent-like payload."""
     from memorus.core.types import SourceRef

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import warnings
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -75,8 +75,8 @@ class ReflectorConfig(BaseModel):
 
     # LLM settings (used by "llm" and "hybrid" modes)
     llm_model: str = "openai/gpt-4o-mini"
-    llm_api_base: Optional[str] = None
-    llm_api_key: Optional[str] = None
+    llm_api_base: str | None = None
+    llm_api_key: str | None = None
     max_eval_tokens: int = Field(default=512, gt=0)
     max_distill_tokens: int = Field(default=256, gt=0)
     llm_temperature: float = Field(default=0.1, ge=0.0, le=2.0)
@@ -97,7 +97,10 @@ class ReflectorConfig(BaseModel):
 class CuratorConfig(BaseModel):
     """Configuration for the Curator (dedup / merge) engine."""
 
-    similarity_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    # Aligned to Rust source-of-truth: was 0.8, now 0.9 (see
+    # memorus-core/src/config.rs `default_dedup_threshold`). A higher threshold
+    # means fewer false-positive dedup merges — the safer default.
+    similarity_threshold: float = Field(default=0.9, ge=0.0, le=1.0)
     merge_strategy: str = "keep_best"  # "keep_best" | "merge_content"
     conflict_detection: bool = False
     conflict_min_similarity: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -134,7 +137,21 @@ class GraphExpansionConfig(BaseModel):
 
 
 class RetrievalConfig(BaseModel):
-    """Configuration for search / retrieval scoring."""
+    """Configuration for search / retrieval scoring.
+
+    CROSS-LANGUAGE NOTE (parity): this 2-way weight model
+    (``keyword_weight`` 0.6 + ``semantic_weight`` 0.4) is INTENTIONALLY
+    different from the Rust ``RetrievalConfig``
+    (``memorus-core/src/config.rs``), which uses a 4-way
+    ``semantic`` + ``recency`` + ``frequency`` + ``decay`` split. The two
+    configs drive different retrieval architectures: the Python
+    ``GeneratorEngine`` scores via a keyword/semantic ``ScoreMerger`` pipeline
+    (L1+L2+L3 keyword vs L4 semantic), while the Rust ``MemoryCrudEngine``
+    scores via a native vector-store search. These are NOT the same
+    abstraction and must NOT be mechanically aligned. The behavior-parity gate
+    asserts each side's weights sum to 1.0 independently rather than asserting
+    equality on weight names.
+    """
 
     keyword_weight: float = Field(default=0.6, ge=0.0)
     semantic_weight: float = Field(default=0.4, ge=0.0)
@@ -168,7 +185,7 @@ class DaemonConfig(BaseModel):
 
     enabled: bool = False
     idle_timeout_seconds: int = Field(default=300, gt=0)
-    socket_path: Optional[str] = None
+    socket_path: str | None = None
 
 
 class ConsolidateConflictConfig(BaseModel):

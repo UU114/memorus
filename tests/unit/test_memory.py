@@ -165,13 +165,14 @@ class TestProxyMode:
             filters={"user_id": "u1"},
             prompt="custom prompt",
         )
+        # mem0 1.0.x dropped `filters` from add(); accepted by our wrapper for
+        # API symmetry but intentionally NOT forwarded to mem0.add().
         memory._mem0.add.assert_called_once_with(
             "test message",
             user_id="u1",
             agent_id="a1",
             run_id="r1",
             metadata={"key": "val"},
-            filters={"user_id": "u1"},
             prompt="custom prompt",
         )
         assert result == {"results": [{"id": "1", "memory": "test"}]}
@@ -230,6 +231,59 @@ class TestProxyMode:
         memory._mem0.history.assert_called_once_with("mem-123")
         assert result == {"changes": []}
 
+    def test_erase_user_hard_deletes_all_rows(self, memory: Memory) -> None:
+        """erase_user() enumerates the user's bullets and hard-deletes each,
+        including previously soft-deleted ones."""
+        memory._mem0.get_all.return_value = {
+            "memories": [
+                {"id": "a", "memory": "x", "metadata": {}},
+                {"id": "b", "memory": "y", "metadata": {"deleted_at": "2026-01-01"}},
+            ]
+        }
+        report = memory.erase_user("u1")
+
+        memory._mem0.get_all.assert_called_once_with(user_id="u1")
+        assert {c.args[0] for c in memory._mem0.delete.call_args_list} == {"a", "b"}
+        assert report == {"erased": 2, "soft_deleted_purged": 1, "failed": 0}
+
+    def test_erase_user_reads_results_key(self, memory: Memory) -> None:
+        """erase_user() also handles the mem0 'results' row key."""
+        memory._mem0.get_all.return_value = {
+            "results": [{"id": "a", "memory": "x", "metadata": {}}]
+        }
+        report = memory.erase_user("u1")
+        assert report["erased"] == 1
+
+    def test_erase_user_requires_user_id(self, memory: Memory) -> None:
+        """erase_user() refuses an empty user_id (would erase nothing silently)."""
+        with pytest.raises(ValueError):
+            memory.erase_user("")
+
+    def test_erase_user_counts_failures(self, memory: Memory) -> None:
+        """A delete failure is counted, not silently swallowed, and the sweep
+        continues for the rest."""
+        memory._mem0.get_all.return_value = {
+            "memories": [
+                {"id": "a", "memory": "x", "metadata": {}},
+                {"id": "b", "memory": "y", "metadata": {}},
+            ]
+        }
+        memory._mem0.delete.side_effect = [RuntimeError("boom"), None]
+        report = memory.erase_user("u1")
+        assert report == {"erased": 1, "soft_deleted_purged": 0, "failed": 1}
+
+    def test_purge_soft_deleted_only_removes_tagged(self, memory: Memory) -> None:
+        """purge_soft_deleted() removes only deleted_at-tagged rows."""
+        memory._mem0.get_all.return_value = {
+            "memories": [
+                {"id": "a", "memory": "x", "metadata": {}},
+                {"id": "b", "memory": "y", "metadata": {"deleted_at": "2026-01-01"}},
+            ]
+        }
+        purged = memory.purge_soft_deleted()
+        assert purged == 1
+        memory._mem0.delete.assert_called_once_with("b")
+
     def test_reset_proxy(self, memory: Memory) -> None:
         """reset() proxies to _mem0.reset."""
         memory.reset()
@@ -244,7 +298,6 @@ class TestProxyMode:
             agent_id=None,
             run_id=None,
             metadata=None,
-            filters=None,
             prompt=None,
             extra_param="extra_value",
         )
@@ -602,7 +655,6 @@ class TestEdgeCases:
             agent_id=None,
             run_id=None,
             metadata=None,
-            filters=None,
             prompt=None,
         )
         assert "results" in result

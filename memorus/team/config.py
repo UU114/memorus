@@ -10,7 +10,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -110,8 +110,8 @@ class TeamConfig(BaseModel):
     """
 
     enabled: bool = False
-    server_url: Optional[str] = None
-    team_id: Optional[str] = None
+    server_url: str | None = None
+    team_id: str | None = None
     subscribed_tags: list[str] = Field(default_factory=list)
     cache_max_bullets: int = 2000
     cache_ttl_minutes: int = 60
@@ -126,7 +126,7 @@ class TeamConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _find_config_file() -> Optional[Path]:
+def _find_config_file() -> Path | None:
     """Locate the first existing team_config.yaml in search paths."""
     for search_dir in _CONFIG_SEARCH_PATHS:
         for filename in _CONFIG_FILENAMES:
@@ -146,7 +146,7 @@ def _load_yaml_file(path: Path) -> dict[str, Any]:
         return {}
 
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return data if isinstance(data, dict) else {}
     except Exception as e:
@@ -194,7 +194,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def load_team_config(config_path: Optional[Path] = None) -> TeamConfig:
+def load_team_config(config_path: Path | None = None) -> TeamConfig:
     """Load TeamConfig from file + environment variable overrides.
 
     Priority: env vars > file values > defaults.

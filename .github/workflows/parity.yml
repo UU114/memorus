@@ -1,0 +1,70 @@
+name: cross-language-parity
+
+# Phase 3 gate (doc/migration-rust-source-of-truth.md): the pure-Python engine
+# and the Rust-backed shim must satisfy the same semantic invariants. This gate
+# must be GREEN before the default backend is flipped to rust or the pure-Python
+# engines are removed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "memorus/**"
+      - "memorus-r/**"
+      - "tests/parity/**"
+      - ".github/workflows/parity.yml"
+  pull_request:
+    paths:
+      - "memorus/**"
+      - "memorus-r/**"
+      - "tests/parity/**"
+  workflow_dispatch:
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    env:
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache HuggingFace model (all-MiniLM-L6-v2)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2-v1
+
+      - name: Pre-cache embedder model (only if not cached)
+        run: |
+          python -m pip install -U "huggingface_hub" "sentence-transformers"
+          python - <<'PY'
+          import os
+          # Populate the local cache so the python backend's offline embedder works.
+          os.environ.pop("HF_HUB_OFFLINE", None)
+          os.environ.pop("TRANSFORMERS_OFFLINE", None)
+          from sentence_transformers import SentenceTransformer
+          SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+          PY
+
+      - name: Build and install the Rust binding (memorus_r)
+        uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release --out dist
+          working-directory: memorus-r/memorus-bindings-python
+
+      - name: Install memorus + wheel + test deps
+        run: |
+          python -m pip install -U pip
+          python -m pip install -e ".[dev,onnx]"
+          python -m pip install --no-index --find-links memorus-r/memorus-bindings-python/dist memorus-r
+
+      - name: Run cross-language parity gate
+        run: python -m pytest tests/parity -q

@@ -279,23 +279,21 @@ class TestGitFallbackIntegration:
         results = retriever.search("git")
         assert len(results) >= 1
 
-        # The mandatory bullet ("Never commit .env files to git") should
-        # appear before non-mandatory results.
-        mandatory_indices = [
-            i
-            for i, r in enumerate(results)
-            if r.get("enforcement") == "mandatory"
-        ]
-        non_mandatory_indices = [
-            i
-            for i, r in enumerate(results)
-            if r.get("enforcement") != "mandatory"
-        ]
-
-        if mandatory_indices and non_mandatory_indices:
-            assert mandatory_indices[0] < non_mandatory_indices[0], (
-                "Mandatory bullets must appear before non-mandatory results"
-            )
+        # SECURITY (fail-closed, lockstep with the Rust shadow_merge): a
+        # git-fallback playbook (.ace/playbook.jsonl) is attacker-writable, so its
+        # enforcement="mandatory" bullets are DEMOTED to advisory — never
+        # force-injected. They must not be flagged is_mandatory, and must not jump
+        # ahead of the higher-scored local result. (A cryptographically-verified
+        # upgrade arrives with the federation transport milestone.)
+        git_rows = [r for r in results if r.get("source") == "git_fallback"]
+        assert git_rows, "the git mandatory bullet is retained, just advisory"
+        assert all(not r.get("is_mandatory", False) for r in git_rows), (
+            "git-fallback mandatory bullets must be demoted, not force-injected"
+        )
+        # The demoted git mandatory must not occupy the top slot; the higher-scored
+        # local result ranks first.
+        assert results[0].get("source") != "git_fallback"
+        assert "Local high-score" in results[0].get("content", "")
 
     def test_no_playbook_returns_local_only(self, tmp_path: Path) -> None:
         """Without playbook.jsonl, only Local results returned."""

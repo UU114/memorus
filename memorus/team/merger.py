@@ -23,10 +23,11 @@ Shadow Merge rules:
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Protocol, Sequence, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 from memorus.team.config import MandatoryOverride
 
@@ -226,8 +227,22 @@ class MultiPoolRetriever:
                 r.get("score", r.get("instructivity_score", 50.0) / 100.0)
             )
             bid = r.get("id", "")
+            # SECURITY (trust gate, lockstep with the Rust shadow_merge): honor a
+            # bullet as mandatory ONLY when its enforcement is mandatory AND its
+            # provenance is trusted. Each producing backend stamps a typed
+            # provenance on its result dict (the cache stamps "synced", git-fallback
+            # stamps "external") — both UNTRUSTED, so their mandatory enforcement is
+            # DEMOTED to advisory, never force-injected. This matches Rust's
+            # is_trusted_source, which honors only LocalAuthored | Verified. Neither
+            # an attacker-writable .ace/playbook.jsonl nor a compromised sync server
+            # can force mandatory injection without a verified per-bullet signature
+            # (the "verified" provenance, wired with the federation transport).
+            provenance = r.get("provenance", "")
+            trusted_provenance = provenance in ("local_authored", "verified")
             is_mandatory = (
-                r.get("enforcement") == "mandatory" and source != "local"
+                r.get("enforcement") == "mandatory"
+                and source != "local"
+                and trusted_provenance
             )
 
             # Check if an active override suppresses mandatory enforcement

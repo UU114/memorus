@@ -149,10 +149,10 @@ class SourceRef(BaseModel):
 
 
 def merge_sources(
-    a: list["SourceRef"],
-    b: list["SourceRef"],
+    a: list[SourceRef],
+    b: list[SourceRef],
     cap: int = SOURCES_CAP,
-) -> list["SourceRef"]:
+) -> list[SourceRef]:
     """Merge two SourceRef lists with semantics identical to the Rust side.
 
     Semantics (MUST match ``memorus-core::models::merge_sources``):

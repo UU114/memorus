@@ -25,10 +25,10 @@ import logging
 import math
 import sqlite3
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Iterable, Optional
 
 from memorus.core.types import SourceRef
 
@@ -69,7 +69,7 @@ class EdgeType(str, Enum):
     DERIVED_FROM = "derived_from"
 
     @classmethod
-    def parse(cls, value: str) -> Optional["EdgeType"]:
+    def parse(cls, value: str) -> EdgeType | None:
         """Return the matching enum variant or ``None`` for unknown strings."""
         try:
             return cls(value)
@@ -157,7 +157,7 @@ class SqliteEdgeStore:
 
         # Memory databases cannot be shared across connections — keep one.
         if self._is_memory:
-            self._memory_conn: Optional[sqlite3.Connection] = sqlite3.connect(
+            self._memory_conn: sqlite3.Connection | None = sqlite3.connect(
                 self._path,
                 detect_types=0,
                 check_same_thread=False,
@@ -198,7 +198,7 @@ class SqliteEdgeStore:
                 logger.debug("Failed to close edge-store connection", exc_info=True)
             self._local.conn = None
 
-    def __enter__(self) -> "SqliteEdgeStore":
+    def __enter__(self) -> SqliteEdgeStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
@@ -261,7 +261,7 @@ class SqliteEdgeStore:
     def decay_all(
         self,
         factor: float,
-        edge_type: Optional[EdgeType] = None,
+        edge_type: EdgeType | None = None,
     ) -> int:
         """Multiply every stored weight by *factor* (clamped to ``[0, 1]``).
 
@@ -413,7 +413,7 @@ def write_supersedes_edge(
     store: SqliteEdgeStore,
     old_id: str,
     new_id: str,
-) -> Optional[BulletEdge]:
+) -> BulletEdge | None:
     """Record an ``old → new`` Supersede edge with weight 1.0.
 
     Returns ``None`` when the IDs are equal or empty (no edge written).

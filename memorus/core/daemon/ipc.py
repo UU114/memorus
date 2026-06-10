@@ -13,7 +13,6 @@ import logging
 import struct
 import sys
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from memorus.core.config import DaemonConfig
 from memorus.core.daemon.server import PIPE_NAME, SOCKET_PATH
@@ -71,8 +70,8 @@ class NamedPipeTransport(IPCTransport):
 
     def __init__(self, pipe_name: str = PIPE_NAME) -> None:
         self._pipe_name = pipe_name
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
 
     async def connect(self) -> None:
         """Open a stream connection to the named pipe."""
@@ -125,8 +124,8 @@ class UnixSocketTransport(IPCTransport):
 
     def __init__(self, socket_path: str = str(SOCKET_PATH)) -> None:
         self._socket_path = socket_path
-        self._reader: Optional[asyncio.StreamReader] = None
-        self._writer: Optional[asyncio.StreamWriter] = None
+        self._reader: asyncio.StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
 
     async def connect(self) -> None:
         """Open a stream connection to the Unix socket."""
@@ -174,7 +173,7 @@ class UnixSocketTransport(IPCTransport):
 # ---------------------------------------------------------------------------
 
 
-def get_transport(config: Optional[DaemonConfig] = None) -> IPCTransport:
+def get_transport(config: DaemonConfig | None = None) -> IPCTransport:
     """Create the appropriate IPC transport for the current platform.
 
     On Windows, returns a :class:`NamedPipeTransport`.

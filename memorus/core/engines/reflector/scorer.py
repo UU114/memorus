@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from memorus.core.config import ReflectorConfig
 from memorus.core.purpose import PoolPurpose, apply_purpose
@@ -75,14 +74,14 @@ class KnowledgeScorer:
 
     def __init__(
         self,
-        config: Optional[ReflectorConfig] = None,
-        purpose: Optional[PoolPurpose] = None,
+        config: ReflectorConfig | None = None,
+        purpose: PoolPurpose | None = None,
     ):
         self._config = config or ReflectorConfig()
         self._min_score = self._config.min_score
         self._purpose = purpose
 
-    def score(self, pattern: DetectedPattern) -> Optional[ScoredCandidate]:
+    def score(self, pattern: DetectedPattern) -> ScoredCandidate | None:
         """Score a pattern. Returns None if below min_score threshold."""
         knowledge_type = self._classify_type(pattern)
         section = self._assign_section(pattern.content)

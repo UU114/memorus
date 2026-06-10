@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 from memorus.core.config import ReflectorConfig
 from memorus.core.engines.reflector.distiller import BulletDistiller
@@ -77,7 +76,7 @@ class LLMDistiller:
 
         return self._fallback_distill(candidate)
 
-    def _call_llm(self, candidate: ScoredCandidate) -> Optional[CandidateBullet]:
+    def _call_llm(self, candidate: ScoredCandidate) -> CandidateBullet | None:
         """Make the LLM distillation call."""
         try:
             from litellm import completion
@@ -118,7 +117,7 @@ class LLMDistiller:
 
     def _parse_response(
         self, raw: str, candidate: ScoredCandidate
-    ) -> Optional[CandidateBullet]:
+    ) -> CandidateBullet | None:
         """Parse LLM JSON response into CandidateBullet."""
         text = raw.strip()
         if text.startswith("```"):

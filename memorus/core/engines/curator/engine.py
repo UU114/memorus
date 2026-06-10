@@ -323,7 +323,7 @@ class CuratorEngine:
         Thresholds (mirrors Rust defaults, with Python ``CuratorConfig``
         fallback values for missing fields):
 
-        * ``dedup_threshold``: ``CuratorConfig.similarity_threshold`` (0.8)
+        * ``dedup_threshold``: ``CuratorConfig.similarity_threshold`` (0.9)
         * ``skip_threshold``: 0.95 (Rust default; not exposed in Python config)
         * ``conflict_min_similarity``: ``CuratorConfig.conflict_min_similarity``
         * ``conflict_max_similarity``: ``CuratorConfig.conflict_max_similarity``
@@ -556,9 +556,9 @@ def supersedes_from_merges(
 
 
 def persist_supersedes(
-    store: "SqliteEdgeStore",
+    store: SqliteEdgeStore,
     records: list[SupersedeRecord],
-) -> list["BulletEdge"]:
+) -> list[BulletEdge]:
     """Persist every :class:`SupersedeRecord` into *store*.
 
     Returns the list of written edges (excluding no-ops). Uses the pure

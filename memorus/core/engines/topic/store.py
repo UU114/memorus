@@ -26,10 +26,10 @@ import logging
 import re
 import sqlite3
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +89,7 @@ class TopicPage:
         )
 
     @classmethod
-    def from_row(cls, row: Iterable) -> "TopicPage":
+    def from_row(cls, row: Iterable) -> TopicPage:
         (
             id_, slug, title, summary, bullets_json,
             source_hash, model_hash, created_at, updated_at,
@@ -206,7 +206,7 @@ class SqliteTopicStore:
         self._local = threading.local()
 
         if self._is_memory:
-            self._memory_conn: Optional[sqlite3.Connection] = sqlite3.connect(
+            self._memory_conn: sqlite3.Connection | None = sqlite3.connect(
                 self._path, detect_types=0, check_same_thread=False,
             )
         else:
@@ -244,7 +244,7 @@ class SqliteTopicStore:
                 logger.debug("Failed to close topic-store conn", exc_info=True)
             self._local.conn = None
 
-    def __enter__(self) -> "SqliteTopicStore":
+    def __enter__(self) -> SqliteTopicStore:
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
@@ -294,7 +294,7 @@ class SqliteTopicStore:
     # Reads
     # ------------------------------------------------------------------
 
-    def get_by_id(self, page_id: str) -> Optional[TopicPage]:
+    def get_by_id(self, page_id: str) -> TopicPage | None:
         conn = self._conn()
         row = conn.execute(
             "SELECT id, slug, title, summary, bullet_ids, source_hash, "
@@ -304,7 +304,7 @@ class SqliteTopicStore:
         ).fetchone()
         return TopicPage.from_row(row) if row else None
 
-    def get_by_slug(self, slug: str) -> Optional[TopicPage]:
+    def get_by_slug(self, slug: str) -> TopicPage | None:
         conn = self._conn()
         row = conn.execute(
             "SELECT id, slug, title, summary, bullet_ids, source_hash, "
@@ -314,7 +314,7 @@ class SqliteTopicStore:
         ).fetchone()
         return TopicPage.from_row(row) if row else None
 
-    def get_by_source_hash(self, source_hash: str) -> Optional[TopicPage]:
+    def get_by_source_hash(self, source_hash: str) -> TopicPage | None:
         """Return the page whose source_hash matches, if any (drift check)."""
         if not source_hash:
             return None

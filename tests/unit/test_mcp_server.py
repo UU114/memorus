@@ -277,7 +277,9 @@ class TestGetMemory:
         mod._memory_singleton = None  # reset
 
         mock_memory = MagicMock()
-        with patch("memorus.core.memory.Memory", return_value=mock_memory) as mock_cls:
+        # _get_memory resolves Memory via the backend-aware top-level package
+        # (`from memorus import Memory`), so patch that lookup target.
+        with patch("memorus.Memory", return_value=mock_memory) as mock_cls:
             result1 = mod._get_memory()
             result2 = mod._get_memory()
 

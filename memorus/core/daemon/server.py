@@ -16,7 +16,7 @@ import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from memorus import __version__
 from memorus.core.config import DaemonConfig
@@ -65,7 +65,7 @@ class DaemonResponse:
 
     status: str  # "ok" | "error"
     data: dict[str, Any] = field(default_factory=dict)
-    error: Optional[str] = None
+    error: str | None = None
 
     def to_json(self) -> str:
         """Serialize to JSON string."""
@@ -117,18 +117,18 @@ class MemorusDaemon:
         await daemon.start()   # blocks until shutdown
     """
 
-    def __init__(self, config: Optional[DaemonConfig] = None) -> None:
+    def __init__(self, config: DaemonConfig | None = None) -> None:
         self._config = config or DaemonConfig()
         self._memory: Any = None  # memorus.memory.Memory (lazy)
         self._sessions: dict[str, datetime] = {}
-        self._idle_timer: Optional[asyncio.Task[None]] = None
+        self._idle_timer: asyncio.Task[None] | None = None
         self._server: Any = None  # asyncio server handle
         self._running = False
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._shutdown_event: Optional[asyncio.Event] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._shutdown_event: asyncio.Event | None = None
         # IdleOrchestrator (STORY-R094)
         self._orchestrator: Any = None
-        self._orchestrator_task: Optional[asyncio.Task[None]] = None
+        self._orchestrator_task: asyncio.Task[None] | None = None
 
     # -- Properties ---------------------------------------------------------
 
@@ -668,7 +668,7 @@ class MemorusDaemon:
             return False
 
     @classmethod
-    def read_pid(cls) -> Optional[int]:
+    def read_pid(cls) -> int | None:
         """Read the PID from the PID file, or return None if not present."""
         if not PID_PATH.exists():
             return None

@@ -1,0 +1,61 @@
+Memorus — Adaptive collaborative memory engine for AI agents
+Copyright 2026 The Memorus Authors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+
+This product builds on, and/or distributes binaries that statically link,
+the following third-party works. Each is the property of its respective
+authors and is used under its own license.
+
+mem0 (mem0ai)
+  Licensed under the Apache License, Version 2.0.
+  Copyright 2023 Taranjeet Singh and the mem0 contributors.
+  Memorus' ACE layer is built on top of mem0, which is consumed as a Python
+  dependency (PyPI: mem0ai). https://github.com/mem0ai/mem0
+
+sentence-transformers/all-MiniLM-L6-v2 (ONNX embedding model)
+  Licensed under the Apache License, Version 2.0.
+  Optionally downloaded at runtime by the ONNX embedder for offline inference;
+  not redistributed as part of this package's source or wheels.
+
+------------------------------------------------------------------------------
+Components linked into the native Rust binaries (memorus-r)
+------------------------------------------------------------------------------
+
+The Memorus native components (memorus-r) and their shipped CLI/daemon binaries
+and Python/Node extension modules may statically link the following crates.
+This NOTICE reproduces their required attributions; full license texts are
+available in the respective upstream repositories.
+
+ring
+  Licensed under a combination of the ISC, MIT, and OpenSSL/BoringSSL licenses.
+  Portions derived from BoringSSL are:
+    Copyright (c) 2015-2016 the BoringSSL Authors.
+    Copyright (c) 1998-2011 The OpenSSL Project.
+    Copyright (c) 1995-1998 Eric Young (eay@cryptsoft.com).
+  Used under the ISC-style and OpenSSL-derived terms. https://github.com/briansmith/ring
+
+rustls
+  Licensed under Apache-2.0 OR ISC OR MIT.
+
+SQLite (via rusqlite / libsqlite3-sys, bundled)
+  SQLite is in the public domain. https://www.sqlite.org/copyright.html
+
+------------------------------------------------------------------------------
+License composition
+------------------------------------------------------------------------------
+
+The Python package "memorus" is licensed under Apache-2.0 (see ./LICENSE).
+The native Rust workspace "memorus-r" is licensed under the MIT License
+(see ./memorus-r/LICENSE). Each component carries its own LICENSE file; this
+split is intentional. When in doubt, the LICENSE file co-located with a given
+component governs that component.
+
+A machine-generated third-party dependency manifest (covering the full
+transitive crate graph) should be produced at release time via `cargo-about`
+or `cargo-deny`; this NOTICE covers the components requiring explicit
+attribution in shipped artifacts.

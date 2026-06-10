@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from typing import Any, Optional
+from typing import Any
 
 from memorus.core.config import DaemonConfig
 from memorus.core.daemon.client import DaemonClient
@@ -54,7 +54,7 @@ class DaemonFallbackManager:
 
     def __init__(
         self,
-        config: Optional[DaemonConfig] = None,
+        config: DaemonConfig | None = None,
         recovery_interval: int = DEFAULT_RECOVERY_INTERVAL,
         recovery_cooldown: float = DEFAULT_RECOVERY_COOLDOWN,
     ) -> None:
@@ -122,7 +122,7 @@ class DaemonFallbackManager:
         query: str,
         user_id: str = "default",
         limit: int = 5,
-    ) -> Optional[list[dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         """Attempt recall via daemon.  Returns None if unavailable.
 
         When the daemon is available, sends the recall request through IPC.
@@ -142,7 +142,7 @@ class DaemonFallbackManager:
         self,
         messages: Any,
         user_id: str = "default",
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Attempt curate via daemon.  Returns None if unavailable.
 
         When the daemon is available, sends the curate request through IPC.

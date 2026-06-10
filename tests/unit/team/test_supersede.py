@@ -265,6 +265,18 @@ class TestSupersedeDetectorIgnore:
 # ---------------------------------------------------------------------------
 
 
+def _passthrough_redactor(content: str) -> MagicMock:
+    """A redactor mock that returns *content* unchanged (identity redaction).
+
+    submit_supersede now requires a redactor (fail-closed), so tests that
+    assert on the forwarded content supply an explicit no-op redactor.
+    """
+    r = MagicMock()
+    r.redact_l1.return_value = MagicMock()
+    r.finalize.return_value = {"content": content}
+    return r
+
+
 class TestSubmitSupersede:
     @pytest.mark.asyncio
     async def test_success(self):
@@ -281,7 +293,9 @@ class TestSubmitSupersede:
         )
 
         result = await submit_supersede(
-            proposal, sync_client=mock_client
+            proposal,
+            redactor=_passthrough_redactor("corrected content"),
+            sync_client=mock_client,
         )
         assert result.success is True
         assert result.bullet_id == "new-id"
@@ -337,7 +351,11 @@ class TestSubmitSupersede:
         proposal = SupersedeProposal(
             origin_id="t1", new_content="urgent fix", priority="urgent"
         )
-        result = await submit_supersede(proposal, sync_client=mock_client)
+        result = await submit_supersede(
+            proposal,
+            redactor=_passthrough_redactor("urgent fix"),
+            sync_client=mock_client,
+        )
         assert result.success is True
         call_args = mock_client.propose_supersede.call_args
         assert call_args[1]["priority"] == "urgent"
@@ -348,9 +366,24 @@ class TestSubmitSupersede:
         mock_client.propose_supersede.side_effect = RuntimeError("network error")
 
         proposal = SupersedeProposal(origin_id="t1", new_content="x")
-        result = await submit_supersede(proposal, sync_client=mock_client)
+        result = await submit_supersede(
+            proposal,
+            redactor=_passthrough_redactor("x"),
+            sync_client=mock_client,
+        )
         assert result.success is False
         assert "network error" in result.error
+
+    @pytest.mark.asyncio
+    async def test_no_redactor_fails_closed(self):
+        """SECURITY: a missing redactor is a hard failure — content must never
+        be uploaded to the team pool unredacted."""
+        mock_client = AsyncMock()
+        proposal = SupersedeProposal(origin_id="t1", new_content="raw secret")
+        result = await submit_supersede(proposal, sync_client=mock_client)
+        assert result.success is False
+        assert "redactor" in result.error.lower()
+        mock_client.propose_supersede.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

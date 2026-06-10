@@ -29,8 +29,9 @@ def _make_bullet(
     incompatible_tags: list[str] | None = None,
     enforcement: str = "suggestion",
     instructivity_score: float = 50.0,
+    provenance: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    bullet = {
         "content": content,
         "score": score,
         "tags": tags or [],
@@ -38,6 +39,12 @@ def _make_bullet(
         "enforcement": enforcement,
         "instructivity_score": instructivity_score,
     }
+    # The trust gate honors mandatory enforcement only for trusted provenance
+    # ("verified"/"local_authored"); tests that exercise mandatory injection mark
+    # the bullet trusted, otherwise it is correctly demoted to advisory.
+    if provenance is not None:
+        bullet["provenance"] = provenance
+    return bullet
 
 
 def _make_pool(results: list[dict[str, Any]]) -> MagicMock:
@@ -192,7 +199,8 @@ class TestMandatoryEnforcement:
         """Mandatory team bullet always appears first."""
         local = _make_pool([_make_bullet("local", score=0.99)])
         team = _make_pool([
-            _make_bullet("mandatory rule", score=0.1, enforcement="mandatory"),
+            _make_bullet("mandatory rule", score=0.1, enforcement="mandatory",
+                         provenance="verified"),
         ])
         retriever = MultiPoolRetriever(
             local_backend=local,
@@ -209,7 +217,7 @@ class TestMandatoryEnforcement:
         ])
         team = _make_pool([
             _make_bullet("mandatory", score=0.1, enforcement="mandatory",
-                         tags=["legacy"]),
+                         tags=["legacy"], provenance="verified"),
         ])
         retriever = MultiPoolRetriever(
             local_backend=local,

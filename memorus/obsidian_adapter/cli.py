@@ -24,8 +24,8 @@ def _build_team_components(team_id: str | None, server_url: str | None, token: s
     """Return (TeamCacheStorage|None, AceSyncClient|None, Redactor|None)."""
     cache = sync = redactor = None
     try:
-        from memorus.team.config import RedactorConfig, TeamConfig
         from memorus.team.cache_storage import TeamCacheStorage
+        from memorus.team.config import RedactorConfig, TeamConfig
         from memorus.team.redactor import Redactor
         tc = TeamConfig(team_id=team_id) if team_id else TeamConfig()
         cache = TeamCacheStorage(tc)

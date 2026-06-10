@@ -9,10 +9,11 @@ graceful fallback rather than crashing the pipeline.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any
 
-from memorus.core.types import BulletMetadata, CandidateBullet, InteractionEvent
+from memorus.core.types import BulletMetadata, InteractionEvent
 from memorus.core.utils.bullet_factory import BulletFactory
 
 logger = logging.getLogger(__name__)
@@ -44,9 +45,9 @@ class IngestPipeline:
         reflector: Any,  # ReflectorEngine
         sanitizer: Any = None,  # PrivacySanitizer
         curator: Any = None,  # CuratorEngine (Sprint 2)
-        mem0_add_fn: Optional[Callable[..., Any]] = None,
-        mem0_get_all_fn: Optional[Callable[..., Any]] = None,
-        mem0_update_fn: Optional[Callable[..., Any]] = None,
+        mem0_add_fn: Callable[..., Any] | None = None,
+        mem0_get_all_fn: Callable[..., Any] | None = None,
+        mem0_update_fn: Callable[..., Any] | None = None,
     ):
         self._reflector = reflector
         self._sanitizer = sanitizer
@@ -58,11 +59,11 @@ class IngestPipeline:
     def process(
         self,
         messages: Any,
-        metadata: Optional[dict[str, Any]] = None,
-        user_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        run_id: Optional[str] = None,
-        scope: Optional[str] = None,
+        metadata: dict[str, Any] | None = None,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        run_id: str | None = None,
+        scope: str | None = None,
         **kwargs: Any,
     ) -> IngestResult:
         """Process messages through the ingest pipeline.
@@ -91,7 +92,17 @@ class IngestPipeline:
 
         # Step 0: Privacy sanitisation (independent of Reflector)
         logger.debug("IngestPipeline step 0: sanitization (sanitizer=%s)", self._sanitizer is not None)
-        sanitized_messages = self._run_sanitizer(messages)
+        try:
+            sanitized_messages = self._run_sanitizer(messages)
+        except Exception as e:
+            # SECURITY (fail-closed): if sanitization itself fails, we must NOT
+            # fall back to persisting the raw, unsanitized content — that would
+            # leak secrets into the store. Drop the ingest and report the error.
+            logger.error(
+                "Sanitizer failed; dropping ingest to avoid persisting raw content: %s", e
+            )
+            result.errors.append(f"sanitizer_failed: {e}")
+            return result
 
         # Step 1: Parse to InteractionEvent
         event = self._parse_event(sanitized_messages, metadata or {})
@@ -107,7 +118,10 @@ class IngestPipeline:
             logger.debug("IngestPipeline step 2: reflector produced %d candidate(s)", len(candidates))
         except Exception as e:
             logger.warning("Reflector failed, falling back to raw add: %s", e)
-            self._raw_add(messages, metadata, user_id, agent_id, run_id, **kwargs)
+            # SECURITY: persist the SANITIZED messages, never the raw input. A
+            # Reflector failure (LLM timeout, schema error, network drop) must not
+            # bypass the data-at-rest PII layer and write secrets verbatim to disk.
+            self._raw_add(sanitized_messages, metadata, user_id, agent_id, run_id, **kwargs)
             result.raw_fallback = True
             return result
 
@@ -203,35 +217,36 @@ class IngestPipeline:
     # ------------------------------------------------------------------
 
     def _run_sanitizer(self, messages: Any) -> Any:
-        """Run privacy sanitizer on messages. Never raises."""
+        """Run the privacy sanitizer on messages.
+
+        Raises if the sanitizer fails: the caller (``process``) treats a
+        sanitization failure as fail-closed and drops the ingest rather than
+        persisting unsanitized content.
+        """
         if not self._sanitizer:
             logger.debug("IngestPipeline._run_sanitizer: no sanitizer, pass-through")
             return messages
-        try:
-            if isinstance(messages, str):
-                res = self._sanitizer.sanitize(messages)
-                logger.debug("IngestPipeline._run_sanitizer: str modified=%s", res.was_modified)
-                return res.clean_content
-            elif isinstance(messages, list):
-                sanitized = []
-                modified_count = 0
-                for msg in messages:
-                    if isinstance(msg, dict) and "content" in msg:
-                        res = self._sanitizer.sanitize(msg["content"])
-                        if res.was_modified:
-                            modified_count += 1
-                        sanitized.append({**msg, "content": res.clean_content})
-                    else:
-                        sanitized.append(msg)
-                logger.debug(
-                    "IngestPipeline._run_sanitizer: list(%d msgs), %d modified",
-                    len(messages), modified_count,
-                )
-                return sanitized
-            return messages
-        except Exception as e:
-            logger.warning("Sanitizer failed: %s", e)
-            return messages
+        if isinstance(messages, str):
+            res = self._sanitizer.sanitize(messages)
+            logger.debug("IngestPipeline._run_sanitizer: str modified=%s", res.was_modified)
+            return res.clean_content
+        elif isinstance(messages, list):
+            sanitized = []
+            modified_count = 0
+            for msg in messages:
+                if isinstance(msg, dict) and "content" in msg:
+                    res = self._sanitizer.sanitize(msg["content"])
+                    if res.was_modified:
+                        modified_count += 1
+                    sanitized.append({**msg, "content": res.clean_content})
+                else:
+                    sanitized.append(msg)
+            logger.debug(
+                "IngestPipeline._run_sanitizer: list(%d msgs), %d modified",
+                len(messages), modified_count,
+            )
+            return sanitized
+        return messages
 
     @staticmethod
     def _parse_event(messages: Any, metadata: dict[str, Any]) -> InteractionEvent:
@@ -272,8 +287,8 @@ class IngestPipeline:
 
     def _load_existing_bullets(
         self,
-        user_id: Optional[str],
-        agent_id: Optional[str],
+        user_id: str | None,
+        agent_id: str | None,
     ) -> list[Any]:
         """Load existing bullets from mem0 for Curator comparison.
 
@@ -314,10 +329,10 @@ class IngestPipeline:
     def _handle_merge(
         self,
         merge: Any,
-        metadata: Optional[dict[str, Any]],
-        user_id: Optional[str],
-        agent_id: Optional[str],
-        run_id: Optional[str],
+        metadata: dict[str, Any] | None,
+        user_id: str | None,
+        agent_id: str | None,
+        run_id: str | None,
     ) -> None:
         """Handle a merge candidate by updating the existing bullet in mem0.
 
@@ -328,15 +343,29 @@ class IngestPipeline:
             logger.debug("No mem0 update function; merge skipped for %s", merge.existing.bullet_id)
             return
 
-        self._mem0_update(merge.existing.bullet_id, merge.candidate.content)
+        # Pass the existing bullet's metadata so the update fn preserves it.
+        # A content-only update would reset the mem0 payload metadata to {},
+        # silently wiping the merged bullet's memorus_* fields.
+        existing_meta = getattr(merge.existing, "metadata", None)
+        meta_arg = dict(existing_meta) if isinstance(existing_meta, dict) else None
+        try:
+            self._mem0_update(
+                merge.existing.bullet_id,
+                merge.candidate.content,
+                metadata=meta_arg,
+            )
+        except TypeError:
+            # Backward-compatible path for an update fn that only accepts
+            # (memory_id, content) — still better than dropping the merge.
+            self._mem0_update(merge.existing.bullet_id, merge.candidate.content)
 
     def _raw_add(
         self,
         messages: Any,
-        metadata: Optional[dict[str, Any]],
-        user_id: Optional[str],
-        agent_id: Optional[str],
-        run_id: Optional[str],
+        metadata: dict[str, Any] | None,
+        user_id: str | None,
+        agent_id: str | None,
+        run_id: str | None,
         **kwargs: Any,
     ) -> None:
         """Fallback: direct mem0 add without ACE processing."""

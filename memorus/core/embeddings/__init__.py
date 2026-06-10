@@ -86,15 +86,16 @@ def _patch_embedder_config_validator() -> None:
             "onnx",
         ]
 
-        from pydantic import BaseModel, Field, field_validator
         from typing import Optional
+
+        from pydantic import BaseModel, Field, field_validator
 
         class PatchedEmbedderConfig(BaseModel):
             provider: str = Field(
                 description="Provider of the embedding model",
                 default="openai",
             )
-            config: Optional[dict] = Field(
+            config: dict | None = Field(
                 description="Configuration for the specific embedding model",
                 default={},
             )

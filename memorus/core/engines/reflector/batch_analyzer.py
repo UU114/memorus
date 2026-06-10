@@ -26,9 +26,10 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, Protocol
+from typing import Any, Protocol
 
 from memorus.core.config import ReflectorBatchConfig, ReflectorConfig
 from memorus.core.engines.reflector.inbox import Inbox, InboxEntry
@@ -141,8 +142,8 @@ class BatchAnalyzer:
         self,
         reflector_config: ReflectorConfig,
         inbox: Inbox,
-        llm_caller: Optional[LlmCaller] = None,
-        fallback_distill: Optional[Callable[[InboxEntry], list[CandidateBullet]]] = None,
+        llm_caller: LlmCaller | None = None,
+        fallback_distill: Callable[[InboxEntry], list[CandidateBullet]] | None = None,
     ) -> None:
         self._reflector_config = reflector_config
         self._batch_cfg: ReflectorBatchConfig = reflector_config.batch
@@ -154,7 +155,7 @@ class BatchAnalyzer:
     # Triggers
     # ------------------------------------------------------------------
 
-    def should_run(self, now: Optional[datetime] = None) -> bool:
+    def should_run(self, now: datetime | None = None) -> bool:
         """Return True iff there is enough work to justify a batch."""
         pending = self._inbox.list_pending()
         if not pending:
@@ -255,7 +256,7 @@ class BatchAnalyzer:
         report.batches += 1
         report.turns_processed += len(active)
 
-        last_error: Optional[Exception] = None
+        last_error: Exception | None = None
         for attempt in range(1, self._batch_cfg.max_batch_retries + 1):
             try:
                 bullets, tok_a, tok_g = self._run_two_step(active)
@@ -378,7 +379,7 @@ class BatchAnalyzer:
     # Bullet emission hook (overridable by callers)
     # ------------------------------------------------------------------
 
-    _emit_callback: Optional[Callable[[list[CandidateBullet]], None]] = None
+    _emit_callback: Callable[[list[CandidateBullet]], None] | None = None
 
     def set_emit_callback(
         self, cb: Callable[[list[CandidateBullet]], None]
@@ -453,7 +454,7 @@ def _parse_bullets(raw: str) -> list[dict[str, Any]]:
 
 def _raw_bullet_to_candidate(
     raw: dict[str, Any], entries_by_id: dict[str, InboxEntry],
-) -> Optional[CandidateBullet]:
+) -> CandidateBullet | None:
     content = str(raw.get("content") or raw.get("distilled_rule") or "").strip()
     distilled = raw.get("distilled_rule")
     distilled_str = str(distilled).strip() if isinstance(distilled, str) else None
@@ -541,8 +542,8 @@ def _parse_iso(value: str) -> datetime:
 def _default_fallback_distill(entry: InboxEntry) -> list[CandidateBullet]:
     """Last-resort fallback: run the rules reflector on the single turn."""
     try:
-        from memorus.core.engines.reflector.engine import ReflectorEngine
         from memorus.core.config import ReflectorConfig
+        from memorus.core.engines.reflector.engine import ReflectorEngine
         from memorus.core.types import InteractionEvent
 
         cfg = ReflectorConfig(mode="rules")

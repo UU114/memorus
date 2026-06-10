@@ -676,13 +676,15 @@ async def submit_supersede(
     if not sync_client:
         return NominationResult(success=False, error="No sync client available")
 
-    content = proposal.new_content
+    # SECURITY (fail-closed): never upload content to a shared team pool without
+    # redaction. A missing redactor is a hard failure, not a silent pass-through.
+    if redactor is None:
+        return NominationResult(success=False, error="No redactor available")
 
-    # Apply redaction if available
-    if redactor is not None:
-        redacted = redactor.redact_l1(content)
-        final = redactor.finalize(redacted)
-        content = final.get("content", content)
+    content = proposal.new_content
+    redacted = redactor.redact_l1(content)
+    final = redactor.finalize(redacted)
+    content = final.get("content", content)
 
     new_bullet = {
         "content": content,

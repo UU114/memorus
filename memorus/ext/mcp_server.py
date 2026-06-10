@@ -2,6 +2,15 @@
 
 Requires: pip install memorus[mcp]
 Run:      memorus-mcp  (stdio transport)
+
+Backend: the Memory class is obtained from the backend-aware top-level
+``memorus`` package, so ``MEMORUS_BACKEND=rust`` routes every tool through the
+Rust core (every method used here — add/search/get_all/delete/status/
+detect_conflicts/run_decay_sweep/export/import_data — is implemented by the
+Rust shim). See doc/migration-rust-source-of-truth.md.
+
+DEPRECATION: per the locked migration decision, MCP/REST entry points will be
+unified onto the Rust ``memorus-server``; this Python MCP server is transitional.
 """
 
 from __future__ import annotations
@@ -9,7 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,17 +30,18 @@ except ImportError:
 _memory_singleton: Any = None
 
 
-def _get_memory(config: Optional[dict[str, Any]] = None) -> Any:
+def _get_memory(config: dict[str, Any] | None = None) -> Any:
     """Lazily initialize a Memory singleton."""
     global _memory_singleton
     if _memory_singleton is None:
-        from memorus.core.memory import Memory
+        # Backend-aware import: honours MEMORUS_BACKEND (python default / rust).
+        from memorus import Memory
 
         _memory_singleton = Memory(config=config)
     return _memory_singleton
 
 
-def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
+def create_mcp_server(config: dict[str, Any] | None = None) -> FastMCP:
     """Create and return a configured MCP server with Memorus tools.
 
     Raises:
@@ -48,9 +58,9 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
     @mcp.tool()
     async def search_memory(
         query: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 100,
-        scope: Optional[str] = None,
+        scope: str | None = None,
     ) -> dict[str, Any]:
         """Search the knowledge base for relevant memories. Use BEFORE answering to check known context."""
         mem = _get_memory(config)
@@ -61,8 +71,8 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
     @mcp.tool()
     async def add_memory(
         content: str,
-        user_id: Optional[str] = None,
-        scope: Optional[str] = None,
+        user_id: str | None = None,
+        scope: str | None = None,
     ) -> dict[str, Any]:
         """Store a learned fact. Content is auto-deduplicated and classified."""
         mem = _get_memory(config)
@@ -70,7 +80,7 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
 
     @mcp.tool()
     async def list_memories(
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 100,
     ) -> dict[str, Any]:
         """List all stored memories, optionally filtered by user. Use to browse the knowledge base."""
@@ -90,13 +100,13 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
         return {"status": "deleted", "memory_id": memory_id}
 
     @mcp.tool()
-    async def memory_status(user_id: Optional[str] = None) -> dict[str, Any]:
+    async def memory_status(user_id: str | None = None) -> dict[str, Any]:
         """Get knowledge base statistics: total count, section distribution, decay health."""
         mem = _get_memory(config)
         return await asyncio.to_thread(mem.status, user_id=user_id)
 
     @mcp.tool()
-    async def detect_conflicts(user_id: Optional[str] = None) -> list[dict[str, Any]]:
+    async def detect_conflicts(user_id: str | None = None) -> list[dict[str, Any]]:
         """Detect contradictory or conflicting memories in the knowledge base."""
         mem = _get_memory(config)
         conflicts = await asyncio.to_thread(mem.detect_conflicts, user_id=user_id)
@@ -104,7 +114,7 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
 
     @mcp.tool()
     async def run_decay_sweep(
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         archive: bool = True,
     ) -> dict[str, Any]:
         """Run temporal decay to age memories and archive stale ones. Usually runs automatically."""
@@ -117,7 +127,7 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
     async def export_memories(
         filepath: str,
         format: str = "json",
-        scope: Optional[str] = None,
+        scope: str | None = None,
     ) -> dict[str, Any]:
         """Export all memories as JSON or Markdown for backup or migration."""
         import json as json_mod
@@ -143,7 +153,7 @@ def create_mcp_server(config: Optional[dict[str, Any]] = None) -> FastMCP:
         import json as json_mod
 
         path = os.path.expanduser(filepath)
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json_mod.load(f)
         mem = _get_memory(config)
         return await asyncio.to_thread(mem.import_data, data, format=format)
@@ -167,7 +177,7 @@ def main() -> None:
     if args.config:
         config_path = os.path.expanduser(args.config)
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            with open(config_path, encoding="utf-8") as f:
                 config = json_mod.load(f)
         except FileNotFoundError:
             print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)

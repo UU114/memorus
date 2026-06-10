@@ -540,6 +540,9 @@ class TestMandatoryOverride:
                 "tags": ["architecture"],
                 "score": 0.8,
                 "enforcement": "mandatory",
+                # Trusted mandatory bullet (the trust gate only honors verified/
+                # local-authored provenance); this test exercises override logic.
+                "provenance": "verified",
             }
         ]
         local_results = [
@@ -625,6 +628,8 @@ class TestMandatoryOverride:
                 "tags": list(team_bullet_mandatory.tags),
                 "score": 0.5,
                 "enforcement": "mandatory",
+                # Trusted mandatory bullet (trust gate honors verified/local only).
+                "provenance": "verified",
             }
         ]
         local_results = [

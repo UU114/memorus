@@ -18,8 +18,9 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from memorus.core.config import ConsolidateConfig, CuratorConfig
 from memorus.core.engines.curator.engine import CuratorEngine, ExistingBullet
@@ -51,8 +52,8 @@ class IdleOrchestrator:
         curator_config: CuratorConfig,
         adapter: MemoryAdapter,
         load_bullets: LoadBulletsFn,
-        batch_stage: Optional[BatchStageFn] = None,
-        topic_stage: Optional[TopicStageFn] = None,
+        batch_stage: BatchStageFn | None = None,
+        topic_stage: TopicStageFn | None = None,
     ) -> None:
         self._config = config
         self._curator_config = curator_config
@@ -61,7 +62,7 @@ class IdleOrchestrator:
         self._batch_stage = batch_stage
         self._topic_stage = topic_stage
         self._last_activity_monotonic: float = time.monotonic()
-        self._last_run: Optional[datetime] = None
+        self._last_run: datetime | None = None
         self._last_batch_report: Any = None
         self._last_topic_report: Any = None
         self._run_lock = asyncio.Lock()
@@ -80,7 +81,7 @@ class IdleOrchestrator:
         self._stop_event.set()
 
     @property
-    def last_run(self) -> Optional[datetime]:
+    def last_run(self) -> datetime | None:
         return self._last_run
 
     @property
@@ -139,7 +140,7 @@ class IdleOrchestrator:
     # Core run
     # ------------------------------------------------------------------
 
-    async def run_once(self, force: bool = False) -> Optional[ExecutionReport]:
+    async def run_once(self, force: bool = False) -> ExecutionReport | None:
         """Execute one consolidate + executor pass.
 
         ``force=False`` uses ``try_lock``-style semantics so an already-running

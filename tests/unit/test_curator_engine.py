@@ -249,7 +249,8 @@ class TestCurateCustomThreshold:
 class TestCuratorProperties:
     def test_default_threshold(self) -> None:
         engine = CuratorEngine()
-        assert engine.threshold == 0.8
+        # Aligned to Rust source-of-truth: was 0.8, now 0.9.
+        assert engine.threshold == 0.9
 
     def test_custom_threshold(self) -> None:
         engine = CuratorEngine(CuratorConfig(similarity_threshold=0.5))

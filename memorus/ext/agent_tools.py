@@ -13,7 +13,7 @@ Usage:
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 
 def get_openai_tools(memory: Any) -> list[Any]:
@@ -41,12 +41,12 @@ def get_openai_tools(memory: Any) -> list[Any]:
         )
 
     @function_tool
-    def search_memory(query: str, user_id: Optional[str] = None) -> dict[str, Any]:
+    def search_memory(query: str, user_id: str | None = None) -> dict[str, Any]:
         """Search memories by semantic similarity."""
         return memory.search(query, user_id=user_id)
 
     @function_tool
-    def add_memory(content: str, user_id: Optional[str] = None) -> dict[str, Any]:
+    def add_memory(content: str, user_id: str | None = None) -> dict[str, Any]:
         """Add a new memory entry."""
         return memory.add(content, user_id=user_id)
 
@@ -83,28 +83,28 @@ def get_langchain_tools(memory: Any) -> list[Any]:
 
     class SearchInput(BaseModel):
         query: str = Field(description="Search query string")
-        user_id: Optional[str] = Field(default=None, description="Optional user ID filter")
+        user_id: str | None = Field(default=None, description="Optional user ID filter")
 
     class MemorusSearchTool(BaseTool):
         name: str = "search_memory"
         description: str = "Search memories by semantic similarity"
         args_schema: type[BaseModel] = SearchInput
 
-        def _run(self, query: str, user_id: Optional[str] = None) -> dict[str, Any]:
+        def _run(self, query: str, user_id: str | None = None) -> dict[str, Any]:
             return memory.search(query, user_id=user_id)
 
     # -- Add tool -----------------------------------------------------------
 
     class AddInput(BaseModel):
         content: str = Field(description="Memory content to add")
-        user_id: Optional[str] = Field(default=None, description="Optional user ID")
+        user_id: str | None = Field(default=None, description="Optional user ID")
 
     class MemorusAddTool(BaseTool):
         name: str = "add_memory"
         description: str = "Add a new memory entry"
         args_schema: type[BaseModel] = AddInput
 
-        def _run(self, content: str, user_id: Optional[str] = None) -> dict[str, Any]:
+        def _run(self, content: str, user_id: str | None = None) -> dict[str, Any]:
             return memory.add(content, user_id=user_id)
 
     return [MemorusSearchTool(), MemorusAddTool()]

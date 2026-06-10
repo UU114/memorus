@@ -54,13 +54,20 @@ def _make_mandatory_bullet(
     content: str = "Always use lint before commit",
     score: float = 0.8,
 ) -> dict[str, Any]:
-    """Create a team mandatory bullet dict."""
+    """Create a team mandatory bullet dict.
+
+    Marked ``provenance="verified"`` so the trust gate honors it — these tests
+    exercise the mandatory-OVERRIDE feature, which applies to legitimately
+    trusted mandatory bullets (an untrusted one would be demoted before any
+    override logic runs).
+    """
     return {
         "id": bullet_id,
         "content": content,
         "enforcement": "mandatory",
         "score": score,
         "tags": ["workflow"],
+        "provenance": "verified",
     }
 
 

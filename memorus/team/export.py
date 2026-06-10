@@ -7,9 +7,10 @@ bullets suitable for PR review. Byte-identical output across Python/Rust
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 # Default embedding model fingerprint (matches GitFallbackStorage).
 _DEFAULT_MODEL = "all-MiniLM-L6-v2"

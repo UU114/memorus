@@ -1,21 +1,21 @@
 [build-system]
-requires = ["setuptools>=68.0", "wheel"]
+requires = ["setuptools>=77.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "memorus"
 version = "0.2.1"
 description = "Intelligent memory engine for AI agents — mem0 fork with ACE layer"
-readme = "README.md"
+readme = "README-zh.md"
 license = "Apache-2.0"
-requires-python = ">=3.9"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.10"
 authors = [{name = "TPY"}]
 keywords = ["memory", "ai", "agent", "mem0", "knowledge-base"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -39,6 +39,10 @@ mcp = ["mcp>=1.0"]
 api = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
 agents = ["openai-agents>=0.1"]
 langchain = ["langchain-core>=0.2"]
+# Native Rust backend (memorus-r). When installed, the package can select it via
+# MEMORUS_BACKEND=rust. See doc/migration-rust-source-of-truth.md. Pure-Python
+# engines remain the default until the cross-language parity gate is green.
+rust = ["memorus-r>=0.1"]
 all = ["memorus[onnx]", "memorus[graph]", "memorus[llm]", "memorus[team]", "memorus[mcp]", "memorus[api]"]
 dev = [
     "pytest>=8.0",
@@ -67,14 +71,14 @@ include = ["memorus*"]
 exclude = ["tests*", "docs*", "bmad*"]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 strict = true
 packages = ["memorus"]
 

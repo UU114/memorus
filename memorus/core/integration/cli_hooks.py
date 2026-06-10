@@ -15,7 +15,7 @@ import platform
 import signal
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from memorus.core.config import IntegrationConfig
 from memorus.core.integration.hooks import (
@@ -44,7 +44,7 @@ class CLIPreInferenceHook(PreInferenceHook):
     user input and formats them according to the configured template.
     """
 
-    def __init__(self, memory: Memory, config: Optional[IntegrationConfig] = None) -> None:
+    def __init__(self, memory: Memory, config: IntegrationConfig | None = None) -> None:
         self._memory = memory
         self._config = config or IntegrationConfig()
 
@@ -197,7 +197,7 @@ class CLIPostActionHook(PostActionHook):
     def __init__(
         self,
         memory: Memory,
-        config: Optional[IntegrationConfig] = None,
+        config: IntegrationConfig | None = None,
     ) -> None:
         self._memory = memory
         self._config = config or IntegrationConfig()
@@ -279,8 +279,8 @@ class CLISessionEndHook(SessionEndHook):
     def __init__(
         self,
         memory: Memory,
-        decay_engine: "DecayEngine",
-        config: Optional[IntegrationConfig] = None,
+        decay_engine: DecayEngine,
+        config: IntegrationConfig | None = None,
     ) -> None:
         self._memory = memory
         self._decay = decay_engine
@@ -371,7 +371,7 @@ class CLISessionEndHook(SessionEndHook):
 
 
 def setup_signal_handlers(
-    manager: "IntegrationManager",
+    manager: IntegrationManager,
     session_id: str,
 ) -> None:
     """Register SIGTERM and SIGINT handlers to trigger graceful session end.

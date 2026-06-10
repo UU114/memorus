@@ -3,6 +3,14 @@
 Requires: pip install memorus[api]
 Run:      memorus-api --no-auth   (development)
           MEMORUS_API_KEY=secret memorus-api   (production)
+
+Backend: the Memory class is obtained from the backend-aware top-level
+``memorus`` package, so ``MEMORUS_BACKEND=rust`` routes every endpoint through
+the Rust core (every method used here — add/search/get_all/get/delete/status —
+is implemented by the Rust shim). See doc/migration-rust-source-of-truth.md.
+
+DEPRECATION: per the locked migration decision, MCP/REST entry points will be
+unified onto the Rust ``memorus-server``; this Python REST API is transitional.
 """
 
 from __future__ import annotations
@@ -13,7 +21,7 @@ import logging
 import os
 import sys
 from contextlib import asynccontextmanager
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +41,15 @@ if BaseModel is not None:
 
     class AddMemoryRequest(BaseModel):
         content: str
-        user_id: Optional[str] = None
-        metadata: Optional[dict[str, Any]] = None
+        user_id: str | None = None
+        metadata: dict[str, Any] | None = None
 
     class AddMemoryResponse(BaseModel):
         results: dict[str, Any]
 
     class SearchQuery(BaseModel):
         query: str
-        user_id: Optional[str] = None
+        user_id: str | None = None
         limit: int = Field(default=100, ge=1, le=1000)
 
     class StatusResponse(BaseModel):
@@ -61,8 +69,8 @@ _NO_AUTH = False
 
 
 def _verify_api_key(
-    api_key: Optional[str] = Security(_api_key_header) if _api_key_header else None,
-) -> Optional[str]:
+    api_key: str | None = Security(_api_key_header) if _api_key_header else None,
+) -> str | None:
     """Validate the API key header.
 
     Fail-closed: if MEMORUS_API_KEY is set, requests without a valid key are rejected.
@@ -89,7 +97,7 @@ def _get_memory_dep(request: Request) -> Any:
     return request.app.state.memory
 
 
-def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
+def create_app(config: dict[str, Any] | None = None) -> FastAPI:
     """Create a FastAPI application with Memorus endpoints.
 
     Raises:
@@ -103,7 +111,8 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        from memorus.core.memory import Memory
+        # Backend-aware import: honours MEMORUS_BACKEND (python default / rust).
+        from memorus import Memory
 
         app.state.memory = Memory(config=config)
         yield
@@ -121,7 +130,7 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
     @app.post("/memories", response_model=AddMemoryResponse)
     async def create_memory(
         body: AddMemoryRequest,
-        _key: Optional[str] = Depends(_verify_api_key),
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, Any]:
         result = await asyncio.to_thread(
@@ -135,9 +144,9 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
     @app.get("/memories/search")
     async def search_memories(
         query: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 100,
-        _key: Optional[str] = Depends(_verify_api_key),
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, Any]:
         return await asyncio.to_thread(
@@ -146,9 +155,9 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
 
     @app.get("/memories")
     async def list_memories(
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         limit: int = 100,
-        _key: Optional[str] = Depends(_verify_api_key),
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, Any]:
         kwargs: dict[str, Any] = {}
@@ -161,7 +170,7 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
     @app.get("/memories/{memory_id}")
     async def get_memory(
         memory_id: str,
-        _key: Optional[str] = Depends(_verify_api_key),
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, Any]:
         return await asyncio.to_thread(memory.get, memory_id)
@@ -169,7 +178,7 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
     @app.delete("/memories/{memory_id}", response_model=DeleteResponse)
     async def delete_memory(
         memory_id: str,
-        _key: Optional[str] = Depends(_verify_api_key),
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, str]:
         await asyncio.to_thread(memory.delete, memory_id)
@@ -177,8 +186,8 @@ def create_app(config: Optional[dict[str, Any]] = None) -> FastAPI:
 
     @app.get("/status", response_model=StatusResponse)
     async def get_status(
-        user_id: Optional[str] = None,
-        _key: Optional[str] = Depends(_verify_api_key),
+        user_id: str | None = None,
+        _key: str | None = Depends(_verify_api_key),
         memory: Any = Depends(_get_memory_dep),
     ) -> dict[str, Any]:
         result = await asyncio.to_thread(memory.status, user_id=user_id)

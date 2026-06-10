@@ -18,7 +18,6 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 from memorus.core.config import ReflectorConfig
 from memorus.core.engines.reflector.inbox import Inbox, InboxEntry, make_entry
@@ -46,13 +45,13 @@ class RouteKind:
 class RouteDecision:
     kind: str  # "realtime" | "inbox"
     reason: str  # short machine-readable code
-    entry: Optional[InboxEntry] = None
+    entry: InboxEntry | None = None
 
 
 class ReflectorRouter:
     """Decide where each InteractionEvent should flow."""
 
-    def __init__(self, config: ReflectorConfig, inbox: Optional[Inbox] = None) -> None:
+    def __init__(self, config: ReflectorConfig, inbox: Inbox | None = None) -> None:
         self._config = config
         self._inbox = inbox or Inbox(
             path=config.batch.inbox_path,

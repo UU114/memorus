@@ -3,32 +3,57 @@
 Provides `memorus status`, `memorus search`, `memorus learn`, `memorus list`,
 `memorus forget`, and `memorus sweep` commands for inspecting and managing
 the knowledge base. All commands support --json for machine-readable output.
+
+Backend selection: the Memory class is obtained from the top-level ``memorus``
+package, which honours the ``MEMORUS_BACKEND`` environment variable
+(``python`` default, or ``rust`` for the compiled shim). Setting
+``MEMORUS_BACKEND=rust`` transparently routes every command through the Rust
+core. See doc/migration-rust-source-of-truth.md for the migration plan. The
+deeper ACE subcommands (verify/inbox/topics/purpose/review/consolidate) now run
+on the Rust backend too, delegating to the compiled binding via the RustBacked*
+shim. Three capabilities are offline-bounded: ``inbox flush`` does crash
+recovery only (no LLM distillation), ``topics regen`` runs the fallback
+summarizer (no live-corpus LLM), and ``consolidate`` runs the scan only (no
+durable apply); each reports its limitation honestly instead of faking results.
 """
 
 from __future__ import annotations
 
 import json
-import sys
-from typing import Any, Optional
+from typing import Any
 
 import click
 
 import memorus as _memorus_pkg
 
 
-def _create_memory(user_id: Optional[str] = None) -> Any:
+def _create_memory(user_id: str | None = None) -> Any:
     """Create a Memory instance with error handling.
 
     Returns the Memory object or None if initialization fails.
     The error message is printed to stderr.
+
+    The Memory class is resolved through the backend-aware top-level package
+    (``memorus.Memory``) so the ``MEMORUS_BACKEND`` switch reaches the CLI.
     """
     try:
-        from memorus.core.memory import Memory
+        from memorus import Memory
 
         return Memory(config={"ace_enabled": True})
     except Exception as e:
         click.echo(f"Error: Failed to initialize Memorus: {e}", err=True)
         return None
+
+
+def _is_rust_backend() -> bool:
+    """True when the CLI is running under ``MEMORUS_BACKEND=rust``.
+
+    The deep ACE commands (verify / inbox flush / topics regen / consolidate)
+    branch on this: under the rust backend they delegate to the compiled
+    binding via the RustBacked* shim methods rather than driving the
+    pure-Python engines, which are not constructed against the Rust store.
+    """
+    return getattr(_memorus_pkg, "_BACKEND", "python") == "rust"
 
 
 def _count_by(memories: list[dict[str, Any]], field: str) -> dict[str, int]:
@@ -199,8 +224,8 @@ def _print_learn_result(result: dict[str, Any]) -> None:
 
 def _apply_filters(
     memories: list[dict[str, Any]],
-    scope: Optional[str] = None,
-    knowledge_type: Optional[str] = None,
+    scope: str | None = None,
+    knowledge_type: str | None = None,
 ) -> list[dict[str, Any]]:
     """Filter memories by scope and/or knowledge type."""
     filtered = memories
@@ -272,7 +297,7 @@ def cli(ctx: click.Context) -> None:
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
 @click.option("--user-id", default=None, help="Filter by user ID")
 @click.pass_context
-def status(ctx: click.Context, as_json: bool, user_id: Optional[str]) -> None:
+def status(ctx: click.Context, as_json: bool, user_id: str | None) -> None:
     """Show knowledge base statistics."""
     memory = _create_memory()
     if memory is None:
@@ -309,8 +334,8 @@ def search(
     query: str,
     limit: int,
     as_json: bool,
-    user_id: Optional[str],
-    scope: Optional[str],
+    user_id: str | None,
+    scope: str | None,
 ) -> None:
     """Search knowledge base with hybrid retrieval."""
     memory = _create_memory()
@@ -349,7 +374,7 @@ def learn(
     content: str,
     raw: bool,
     as_json: bool,
-    user_id: Optional[str],
+    user_id: str | None,
 ) -> None:
     """Teach Memorus new knowledge."""
     if not content.strip():
@@ -400,11 +425,11 @@ def learn(
 @click.pass_context
 def list_memories(
     ctx: click.Context,
-    scope: Optional[str],
-    knowledge_type: Optional[str],
+    scope: str | None,
+    knowledge_type: str | None,
     limit: int,
     as_json: bool,
-    user_id: Optional[str],
+    user_id: str | None,
 ) -> None:
     """List all memories in the knowledge base."""
     memory = _create_memory()
@@ -547,7 +572,7 @@ def conflicts(
     ctx: click.Context,
     as_json: bool,
     user_id: str | None,
-    conflict_type: Optional[str],
+    conflict_type: str | None,
 ) -> None:
     """Detect contradictory memories."""
     memory = _create_memory()
@@ -636,10 +661,10 @@ def conflicts(
 def export_memories(
     ctx: click.Context,
     fmt: str,
-    scope: Optional[str],
-    output: Optional[str],
+    scope: str | None,
+    output: str | None,
     team_mode: bool,
-    out_dir: Optional[str],
+    out_dir: str | None,
 ) -> None:
     """Export memories to JSON/Markdown or team playbook to .ace/."""
     if team_mode:
@@ -679,8 +704,8 @@ def export_memories(
 def _export_team(
     ctx: click.Context,
     *,
-    scope: Optional[str],
-    out_dir: Optional[str],
+    scope: str | None,
+    out_dir: str | None,
 ) -> None:
     """Handle `memorus export --team`: generate .ace/index.md.
 
@@ -718,7 +743,7 @@ def import_memories(
         return
 
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
+        with open(file_path, encoding="utf-8") as f:
             raw_content = f.read()
     except OSError as e:
         click.echo(f"Error reading file: {e}", err=True)
@@ -836,7 +861,7 @@ def purpose_show(scope: str, as_json: bool) -> None:
 )
 @click.pass_context
 def purpose_init(
-    ctx: click.Context, scope: str, force: bool, name: Optional[str]
+    ctx: click.Context, scope: str, force: bool, name: str | None
 ) -> None:
     """Generate a template `.ace/purpose.md` at the chosen location."""
     from memorus.core.purpose import purpose_template, resolve_purpose_paths
@@ -879,7 +904,7 @@ def purpose_check(ctx: click.Context, bullet_id: str, as_json: bool) -> None:
         return
 
     # Best-effort bullet lookup: try common public APIs in order.
-    bullet: Optional[dict[str, Any]] = None
+    bullet: dict[str, Any] | None = None
     for method_name in ("get_bullet", "get_memory", "get"):
         method = getattr(memory, method_name, None)
         if callable(method):
@@ -956,6 +981,48 @@ def consolidate_cmd(ctx: click.Context, run_now: bool, as_json: bool) -> None:
             "Usage: memorus consolidate --now\n"
             "(The daemon runs consolidate automatically during idle.)"
         )
+        return
+
+    # Rust backend: delegate to the binding's offline curator scan. Durable
+    # apply (supersede / soft-delete / review-queue) needs a daemon-backed
+    # adapter, so the binding reports executed=false; we surface that honestly
+    # rather than faking a merge.
+    if _is_rust_backend():
+        memory = _create_memory()
+        if memory is None:
+            ctx.exit(1)
+            return
+        try:
+            scan = memory.consolidate_run()
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            ctx.exit(1)
+            return
+
+        conflicts_list = scan.get("conflicts", []) or []
+        payload = {
+            "merged_groups": scan.get("merge_groups", 0),
+            "merged_bullets_total": 0,
+            "soft_deleted": scan.get("redundant", 0),
+            "auto_supersede": 0,
+            "queued_for_review": len(conflicts_list),
+            "marked_conflict": len(conflicts_list),
+            "duration_seconds": 0.0,
+            "errors": [],
+            "executed": bool(scan.get("executed", False)),
+            "message": scan.get("message", ""),
+        }
+        if as_json:
+            click.echo(json.dumps(payload, indent=2))
+            return
+
+        click.echo("Consolidate scan complete (rust backend).")
+        click.echo(f"merge-groups: {payload['merged_groups']}")
+        click.echo(f"redundant: {payload['soft_deleted']}")
+        click.echo(f"conflicts: {payload['marked_conflict']}")
+        click.echo(f"pairs-compared: {scan.get('pairs_compared', 0)}")
+        if not payload["executed"] and payload["message"]:
+            click.echo(f"note: {payload['message']}")
         return
 
     memory = _create_memory()
@@ -1073,7 +1140,7 @@ def review_group(ctx: click.Context) -> None:
 @click.pass_context
 def review_list(
     ctx: click.Context,
-    queue_path: Optional[str],
+    queue_path: str | None,
     as_json: bool,
 ) -> None:
     """List all entries in .ace/review_queue.jsonl."""
@@ -1091,7 +1158,7 @@ def review_list(
     rows: list[dict[str, Any]] = []
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as fp:
+            with open(path, encoding="utf-8") as fp:
                 for line in fp:
                     line = line.strip()
                     if not line:
@@ -1188,7 +1255,7 @@ def _resolve_topics_config() -> Any:
     return MemorusConfig().topics
 
 
-def _open_topic_store(sqlite_path: Optional[str], pages_dir: Optional[str]) -> Any:
+def _open_topic_store(sqlite_path: str | None, pages_dir: str | None) -> Any:
     from memorus.core.engines.topic.store import SqliteTopicStore
 
     cfg = _resolve_topics_config()
@@ -1205,8 +1272,8 @@ def _open_topic_store(sqlite_path: Optional[str], pages_dir: Optional[str]) -> A
 @click.pass_context
 def topics_list_cmd(
     ctx: click.Context,
-    sqlite_path: Optional[str],
-    pages_dir: Optional[str],
+    sqlite_path: str | None,
+    pages_dir: str | None,
     as_json: bool,
 ) -> None:
     """List every persisted TopicPage with bullet counts."""
@@ -1255,8 +1322,8 @@ def topics_list_cmd(
 def topics_show_cmd(
     ctx: click.Context,
     slug: str,
-    sqlite_path: Optional[str],
-    pages_dir: Optional[str],
+    sqlite_path: str | None,
+    pages_dir: str | None,
 ) -> None:
     """Print the markdown body of the named topic page."""
     from memorus.core.engines.topic.store import render_markdown
@@ -1292,6 +1359,44 @@ def topics_regen_cmd(
     as_json: bool,
 ) -> None:
     """Force a TopicEngine pass against the current corpus."""
+    # Rust backend: delegate to the binding's offline regen pass. Real LLM
+    # summarization over a live corpus needs a daemon-provided summarizer, so
+    # the binding runs the FallbackSummarizer/empty-corpus pass and reports
+    # llm_regen=false; we surface the same counters the python path prints.
+    if _is_rust_backend():
+        memory = _create_memory()
+        if memory is None:
+            ctx.exit(1)
+            return
+        try:
+            report = memory.topics_regen(force)
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            ctx.exit(1)
+            return
+
+        payload = {
+            "clusters_found": report.get("clusters_found", 0),
+            "pages_created": report.get("pages_created", 0),
+            "pages_updated": report.get("pages_updated", 0),
+            "pages_unchanged": report.get("pages_unchanged", 0),
+            "orphan_candidates": report.get("orphan_candidates", []),
+            "llm_calls": report.get("llm_calls", 0),
+            "fallback_calls": report.get("fallback_calls", 0),
+            "duration_seconds": round(report.get("duration_seconds", 0.0), 3),
+        }
+        if as_json:
+            click.echo(json.dumps(payload, indent=2))
+            return
+        click.echo(
+            f"TopicEngine: {payload['clusters_found']} cluster(s) → "
+            f"{payload['pages_created']} new, {payload['pages_updated']} updated, "
+            f"{payload['pages_unchanged']} unchanged "
+            f"(llm={payload['llm_calls']} fallback={payload['fallback_calls']}, "
+            f"{payload['duration_seconds']}s)"
+        )
+        return
+
     memory = _create_memory()
     if memory is None:
         ctx.exit(1)
@@ -1383,6 +1488,36 @@ def topics_regen_cmd(
 @click.pass_context
 def inbox_flush_cmd(ctx: click.Context, as_json: bool) -> None:
     """Force a BatchAnalyzer pass now, bypassing idle/min-turn gates."""
+    # Rust backend: the binding performs the offline-safe crash-recovery step
+    # (resets stuck in_progress entries to pending) but cannot run the real
+    # BatchAnalyzer distillation, which needs an LLM + storage emit callback
+    # wired by the daemon. Report the recovery honestly and name the gap;
+    # never fabricate distilled bullets.
+    if _is_rust_backend():
+        memory = _create_memory()
+        if memory is None:
+            ctx.exit(1)
+            return
+        try:
+            result = memory.inbox_flush()
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            ctx.exit(1)
+            return
+
+        if as_json:
+            click.echo(json.dumps(result, indent=2))
+            return
+        click.echo(f"Inbox: {result.get('path', '')}")
+        click.echo(
+            f"  recovered in_progress -> pending: "
+            f"{result.get('recovered_in_progress', 0)}"
+        )
+        click.echo(f"  distilled: {result.get('distilled', False)}")
+        if result.get("message"):
+            click.echo(f"  note: {result['message']}")
+        return
+
     memory = _create_memory()
     if memory is None:
         ctx.exit(1)
@@ -1492,10 +1627,10 @@ def verify_cmd(
     ctx: click.Context,
     rehydrate_anchors: bool,
     stale_only: bool,
-    scope: Optional[str],
+    scope: str | None,
     dry_run: bool,
     as_json: bool,
-    user_id: Optional[str],
+    user_id: str | None,
 ) -> None:
     """Verify bullets against the live filesystem and (optionally) backfill anchors.
 
@@ -1508,6 +1643,64 @@ def verify_cmd(
        they are logged at WARNING and counted into ``errors``.
     """
     import time
+
+    # Rust backend: delegate to the binding's verify orchestration. Write-back
+    # of verified_status/trust_score/anchors requires the ASYNC binding (the
+    # sync binding has no apply_verification_patch), so we drive AsyncMemory
+    # here; --dry-run keeps it read-only. Report shape matches the python path.
+    if _is_rust_backend():
+        import asyncio
+
+        from memorus import AsyncMemory
+
+        try:
+            amem = AsyncMemory(config={"ace_enabled": True})
+            report = asyncio.run(
+                amem.verify(
+                    rehydrate_anchors=rehydrate_anchors,
+                    stale_only=stale_only,
+                    scope=scope,
+                    dry_run=dry_run,
+                    user_id=user_id,
+                )
+            )
+        except Exception as e:
+            click.echo(f"Error: {e}", err=True)
+            ctx.exit(1)
+            return
+
+        rust_report = {
+            "verified": report.get("verified", 0),
+            "stale": report.get("stale", 0),
+            "unverifiable": report.get("unverifiable", 0),
+            "not_applicable": report.get("not_applicable", 0),
+            "elapsed_ms": report.get("elapsed_ms", 0),
+            "anchors_added": report.get("anchors_added", 0),
+        }
+        if as_json:
+            click.echo(json.dumps(rust_report, indent=2))
+            return
+
+        mode_bits = []
+        if rehydrate_anchors:
+            mode_bits.append("rehydrate-anchors")
+        if stale_only:
+            mode_bits.append("stale-only")
+        if scope:
+            mode_bits.append(f"scope={scope}")
+        if dry_run:
+            mode_bits.append("dry-run")
+        mode_str = ", ".join(mode_bits) if mode_bits else "full"
+
+        click.echo(f"Verify report ({mode_str})")
+        click.echo("─" * 40)
+        click.echo(f"  verified:        {rust_report['verified']}")
+        click.echo(f"  stale:           {rust_report['stale']}")
+        click.echo(f"  unverifiable:    {rust_report['unverifiable']}")
+        click.echo(f"  not_applicable:  {rust_report['not_applicable']}")
+        click.echo(f"  anchors_added:   {rust_report['anchors_added']}")
+        click.echo(f"  elapsed_ms:      {rust_report['elapsed_ms']}")
+        return
 
     memory = _create_memory()
     if memory is None:

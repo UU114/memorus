@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
-from typing import Any, Optional
+from typing import Any
 
 from memorus.core.config import DaemonConfig
 from memorus.core.daemon.ipc import IPCTransport, get_transport
@@ -47,7 +47,7 @@ class DaemonClient:
 
     def __init__(
         self,
-        config: Optional[DaemonConfig] = None,
+        config: DaemonConfig | None = None,
         connect_timeout: float = DEFAULT_CONNECT_TIMEOUT,
         request_timeout: float = DEFAULT_REQUEST_TIMEOUT,
     ) -> None:

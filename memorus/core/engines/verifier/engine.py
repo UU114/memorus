@@ -32,10 +32,10 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
 
 from memorus.core.config import VerificationConfig
 from memorus.core.types import Anchor, BulletMetadata, VerifiedStatus
@@ -228,7 +228,7 @@ class VerificationEngine:
             # errors="replace" keeps a handful of non-UTF8 bytes (e.g. binary
             # stubs in tests) from crashing the whole batch — substring
             # matches still succeed on the textual prefix.
-            with open(abs_path, "r", encoding="utf-8", errors="replace") as fh:
+            with open(abs_path, encoding="utf-8", errors="replace") as fh:
                 content = fh.read()
         except (OSError, ValueError) as exc:
             logger.debug("verifier: read failed for %s: %s", abs_path, exc)
