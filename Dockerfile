@@ -3,7 +3,7 @@
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
-COPY pyproject.toml README.md ./
+COPY pyproject.toml README-zh.md LICENSE NOTICE ./
 COPY memorus/ ./memorus/
 
 RUN pip install --no-cache-dir build && \
