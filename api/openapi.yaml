@@ -9,9 +9,18 @@ info:
     kova-memory (Rust embedded) exposes the same logical operations
     (search/add/delete) as agent tools with compatible parameter shapes.
 
+    **ACE pipeline is on by default** (reflector in offline `rules` mode;
+    LLM distillation is explicit opt-in). Sanitization is fail-closed:
+    a sanitizer failure drops the ingest instead of persisting raw content.
+    Search scores are normalized to [0, 1].
+
+    The Rust `memorus-server` (LurusTech/Lurus-memorus-r) serves a separate,
+    non-interchangeable `/api/v1/*` surface with additional endpoints
+    (PUT update, history, reset); this spec covers the Python service only.
+
     **Auth:** `X-API-Key` header (env: `MEMORUS_API_KEY`).
     Disable with `--no-auth` flag for development.
-  version: 1.0.0
+  version: 1.1.0
   contact:
     name: Lurus Platform Team
 
@@ -60,7 +69,7 @@ components:
         score:
           type: number
           format: double
-          description: Relevance score (0.0-1.0, only in search results)
+          description: Relevance score (normalized 0.0-1.0, only in search results)
         metadata:
           type: object
           additionalProperties: true
@@ -71,6 +80,16 @@ components:
         created_at:
           type: string
           format: date-time
+        verified_status:
+          type: string
+          description: >
+            Memory-trust verdict (verified / stale / not_applicable). Present
+            only when verification is enabled.
+        trust_score:
+          type: number
+          format: double
+          nullable: true
+          description: Trust score from anchor verification, when available
 
     AddMemoryRequest:
       type: object
@@ -93,7 +112,10 @@ components:
         results:
           type: object
           additionalProperties: true
-          description: Storage result details (events, dedup info)
+          description: >
+            Storage result. With ACE enabled contains an `ace_ingest` summary
+            (bullets_added / raw_fallback / errors) plus per-item rows with
+            record ids under `results` when content was stored verbatim.
 
     SearchResult:
       type: object
@@ -102,6 +124,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MemoryEntry'
+        ace_search:
+          type: object
+          additionalProperties: true
+          description: >
+            ACE retrieval metadata (mode, total_candidates, and
+            dropped_stale_count when verification is enabled).
 
     MemoryList:
       type: object
@@ -173,8 +201,9 @@ paths:
       summary: Store a new memory
       description: |
         Store a piece of knowledge in persistent memory.
-        The ACE pipeline (if enabled) will automatically deduplicate,
-        score, and categorize the memory.
+        The ACE pipeline (on by default) sanitizes fail-closed, then
+        deduplicates, scores, and categorizes the memory; trivial content
+        falls back to verbatim storage and returns its record ids.
 
         **kova-memory equivalent:** `memory_add` tool
         (parameters: `content`, `user_id`)
