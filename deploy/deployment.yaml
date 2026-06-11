@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lurus-memorus
+  namespace: lurus-system
+  labels:
+    app: lurus-memorus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lurus-memorus
+  template:
+    metadata:
+      labels:
+        app: lurus-memorus
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        fsGroup: 65534
+      containers:
+        - name: memorus
+          image: ghcr.io/hanmahong5-arch/lurus-memorus:main
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8880
+              name: http
+          env:
+            - name: MEMORUS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lurus-memorus-secrets
+                  key: api_key
+            # OpenAI-compatible embedding backend (lurus-newapi)
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: lurus-memorus-secrets
+                  key: openai_api_key
+            - name: OPENAI_BASE_URL
+              value: "http://lurus-newapi.lurus-system.svc.cluster.local:3000/v1"
+            - name: MEMORUS_EMBEDDING_MODEL
+              value: "text-embedding-v1"
+            - name: MEMORUS_EMBEDDING_DIMS
+              value: "1536"
+            - name: MEMORUS_LLM_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: lurus-memorus-config
+                  key: llm_model
+            - name: MEMORUS_DATA_DIR
+              value: /data
+            # Set HOME so mem0/chroma write to PVC instead of /nonexistent
+            - name: HOME
+              value: /data
+            - name: MEMORUS_ACE_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: lurus-memorus-config
+                  key: ace_enabled
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            failureThreshold: 18
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8880
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          securityContext:
+            readOnlyRootFilesystem: false  # ONNX model download needs write
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: lurus-memorus-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lurus-memorus-data
+  namespace: lurus-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lurus-memorus-config
+  namespace: lurus-system
+data:
+  ace_enabled: "false"
+  # Reflector mode: rules | hybrid | llm
+  reflector_mode: "hybrid"
+  # Decay half-life in days
+  decay_half_life_days: "30"
+  # Max search results per query
+  max_results: "10"
+  # LLM model for mem0 memory extraction
+  llm_model: "deepseek-chat"

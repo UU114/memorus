@@ -34,7 +34,7 @@ dependencies = [
 onnx = ["onnxruntime>=1.16", "tokenizers>=0.15"]
 graph = ["neo4j>=5.0"]
 llm = ["litellm>=1.40"]
-team = ["httpx>=0.25"]
+team = ["httpx>=0.25", "pyyaml>=6.0"]
 mcp = ["mcp>=1.0"]
 api = ["fastapi>=0.100", "uvicorn[standard]>=0.20"]
 agents = ["openai-agents>=0.1"]
@@ -60,11 +60,11 @@ memorus-mcp = "memorus.ext.mcp_server:main"
 memorus-api = "memorus.ext.rest_api:main"
 
 [project.urls]
-Homepage = "https://github.com/user/memorus"
-Documentation = "https://github.com/user/memorus#readme"
-Repository = "https://github.com/user/memorus"
-Issues = "https://github.com/user/memorus/issues"
-Changelog = "https://github.com/user/memorus/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/lurustech/lurus-memorus"
+Documentation = "https://github.com/lurustech/lurus-memorus#readme"
+Repository = "https://github.com/lurustech/lurus-memorus"
+Issues = "https://github.com/lurustech/lurus-memorus/issues"
+Changelog = "https://github.com/lurustech/lurus-memorus/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["memorus*"]

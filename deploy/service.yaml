@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: memorus
+  namespace: lurus-system
+  labels:
+    app: lurus-memorus
+spec:
+  selector:
+    app: lurus-memorus
+  ports:
+    - name: http
+      port: 8880
+      targetPort: 8880
+  type: ClusterIP

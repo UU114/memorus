@@ -1,0 +1,331 @@
+openapi: 3.1.0
+info:
+  title: Memorus REST API
+  description: |
+    AI Agent persistent memory engine — semantic search, knowledge storage,
+    and ACE v2.0 adaptive context pipeline.
+
+    This is the **standard memory interface** for the Lurus platform.
+    kova-memory (Rust embedded) exposes the same logical operations
+    (search/add/delete) as agent tools with compatible parameter shapes.
+
+    **Auth:** `X-API-Key` header (env: `MEMORUS_API_KEY`).
+    Disable with `--no-auth` flag for development.
+  version: 1.0.0
+  contact:
+    name: Lurus Platform Team
+
+servers:
+  - url: http://memorus.lurus-system.svc:8880
+    description: In-cluster (K8s service)
+
+tags:
+  - name: health
+    description: Health check
+  - name: memory
+    description: Memory CRUD operations
+  - name: search
+    description: Semantic search
+  - name: status
+    description: Knowledge base statistics
+
+security:
+  - ApiKeyAuth: []
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: MEMORUS_API_KEY environment variable
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        detail:
+          type: string
+      required: [detail]
+
+    MemoryEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Unique memory identifier
+        memory:
+          type: string
+          description: Memory content text
+        score:
+          type: number
+          format: double
+          description: Relevance score (0.0-1.0, only in search results)
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Arbitrary metadata attached to the memory
+        user_id:
+          type: string
+          description: User scope for the memory
+        created_at:
+          type: string
+          format: date-time
+
+    AddMemoryRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          description: The knowledge to store (concise, factual statement)
+        user_id:
+          type: string
+          description: Optional user ID to scope the memory
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Optional metadata to attach
+
+    AddMemoryResponse:
+      type: object
+      properties:
+        results:
+          type: object
+          additionalProperties: true
+          description: Storage result details (events, dedup info)
+
+    SearchResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEntry'
+
+    MemoryList:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemoryEntry'
+
+    DeleteResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: deleted
+        memory_id:
+          type: string
+
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: object
+          properties:
+            total:
+              type: integer
+              description: Total number of memories
+            ace_enabled:
+              type: boolean
+              description: Whether ACE pipeline is active
+            sections:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Memory count by section
+            knowledge_types:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Memory count by knowledge type
+            avg_decay_weight:
+              type: number
+              format: double
+              description: Average decay weight across all memories
+
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: healthCheck
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  /memories:
+    post:
+      tags: [memory]
+      operationId: addMemory
+      summary: Store a new memory
+      description: |
+        Store a piece of knowledge in persistent memory.
+        The ACE pipeline (if enabled) will automatically deduplicate,
+        score, and categorize the memory.
+
+        **kova-memory equivalent:** `memory_add` tool
+        (parameters: `content`, `user_id`)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddMemoryRequest'
+      responses:
+        '200':
+          description: Memory stored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AddMemoryResponse'
+        '401':
+          description: Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    get:
+      tags: [memory]
+      operationId: listMemories
+      summary: List all memories
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter by user scope
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+          description: Maximum number of results
+      responses:
+        '200':
+          description: Memory list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryList'
+
+  /memories/search:
+    get:
+      tags: [search]
+      operationId: searchMemories
+      summary: Semantic search across memories
+      description: |
+        Search persistent memory for relevant past knowledge.
+        Returns scored results ranked by relevance.
+
+        **kova-memory equivalent:** `memory_search` tool
+        (parameters: `query`, `limit`, `user_id`)
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: Natural language search query
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional user scope
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 100
+            minimum: 1
+            maximum: 1000
+          description: Maximum number of results
+      responses:
+        '200':
+          description: Search results ranked by relevance
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResult'
+
+  /memories/{memory_id}:
+    get:
+      tags: [memory]
+      operationId: getMemory
+      summary: Get a single memory by ID
+      parameters:
+        - name: memory_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryEntry'
+        '404':
+          description: Memory not found
+
+    delete:
+      tags: [memory]
+      operationId: deleteMemory
+      summary: Delete a memory by ID
+      description: |
+        Delete a specific memory by its ID.
+        Use this to remove outdated or incorrect information.
+
+        **kova-memory equivalent:** `memory_delete` tool
+        (parameters: `id`)
+      parameters:
+        - name: memory_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+
+  /status:
+    get:
+      tags: [status]
+      operationId: getStatus
+      summary: Knowledge base statistics
+      parameters:
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filter stats by user scope
+      responses:
+        '200':
+          description: Knowledge base status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'

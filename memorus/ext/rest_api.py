@@ -127,6 +127,11 @@ def create_app(config: dict[str, Any] | None = None) -> FastAPI:
 
     # ---- Endpoints --------------------------------------------------------
 
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        # Unauthenticated liveness probe for container orchestrators.
+        return {"status": "ok"}
+
     @app.post("/memories", response_model=AddMemoryResponse)
     async def create_memory(
         body: AddMemoryRequest,
@@ -201,6 +206,69 @@ def create_app(config: dict[str, Any] | None = None) -> FastAPI:
 # ---------------------------------------------------------------------------
 
 
+def _build_config_from_env() -> dict[str, Any] | None:
+    """Build a Memorus config dict from environment variables.
+
+    Container/K8s deployments configure the service purely via env. Returns
+    None when OPENAI_API_KEY is absent so local runs keep library defaults
+    (offline ONNX path). Produced shape is the standard flat config dict
+    accepted by ``Memory`` on both backends.
+
+    Supported variables:
+      OPENAI_API_KEY          — API key for embedder + LLM (enables this path)
+      OPENAI_BASE_URL         — OpenAI-compatible endpoint override
+      MEMORUS_EMBEDDING_MODEL — embedding model (default: text-embedding-3-small)
+      MEMORUS_EMBEDDING_DIMS  — embedding dimensions (default: 1536)
+      MEMORUS_LLM_MODEL       — LLM model (default: gpt-4o-mini)
+      MEMORUS_DATA_DIR        — persistent data directory (default: /data)
+      MEMORUS_ACE_ENABLED     — "false"/"0" disables the ACE pipeline
+    """
+    api_key = os.environ.get("OPENAI_API_KEY", "")
+    if not api_key:
+        return None
+
+    base_url = os.environ.get("OPENAI_BASE_URL", "")
+    embed_model = os.environ.get("MEMORUS_EMBEDDING_MODEL", "text-embedding-3-small")
+    llm_model = os.environ.get("MEMORUS_LLM_MODEL", "gpt-4o-mini")
+    data_dir = os.environ.get("MEMORUS_DATA_DIR", "/data")
+    try:
+        dims = int(os.environ.get("MEMORUS_EMBEDDING_DIMS", "1536"))
+    except ValueError:
+        logger.warning("Invalid MEMORUS_EMBEDDING_DIMS, using 1536")
+        dims = 1536
+
+    embedder_cfg: dict[str, Any] = {
+        "model": embed_model,
+        "embedding_dims": dims,
+        "api_key": api_key,
+    }
+    llm_cfg: dict[str, Any] = {"model": llm_model, "api_key": api_key}
+    if base_url:
+        embedder_cfg["openai_base_url"] = base_url
+        llm_cfg["openai_base_url"] = base_url
+
+    config: dict[str, Any] = {
+        "vector_store": {
+            "provider": "qdrant",
+            "config": {
+                "collection_name": "memorus",
+                "path": f"{data_dir}/qdrant",
+                "embedding_model_dims": dims,
+            },
+        },
+        "embedder": {"provider": "openai", "config": embedder_cfg},
+        "llm": {"provider": "openai", "config": llm_cfg},
+    }
+    ace_env = os.environ.get("MEMORUS_ACE_ENABLED", "").strip().lower()
+    if ace_env in ("false", "0", "no", "off"):
+        config["ace_enabled"] = False
+    logger.info(
+        "Config from env: embed=%s dims=%d llm=%s base_url=%s data_dir=%s",
+        embed_model, dims, llm_model, base_url or "(default)", data_dir,
+    )
+    return config
+
+
 def main() -> None:
     """Entry point for ``memorus-api`` console script."""
     if FastAPI is None:
@@ -236,7 +304,7 @@ def main() -> None:
 
     import uvicorn
 
-    uvicorn.run(create_app(), host=args.host, port=args.port)
+    uvicorn.run(create_app(_build_config_from_env()), host=args.host, port=args.port)
 
 
 if __name__ == "__main__":
