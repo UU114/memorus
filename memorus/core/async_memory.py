@@ -29,10 +29,13 @@ class AsyncMemory:
 
             from mem0 import AsyncMemory as Mem0AsyncMemory
 
+            from memorus.core._mem0_compat import wrap_async_mem0
+
             # mem0 >=1.0 takes a MemoryConfig object. AsyncMemory.from_config
             # is itself a coroutine in 1.0.x, so we build the config directly.
-            self._mem0 = Mem0AsyncMemory(
-                config=MemoryConfig(**self._config.to_mem0_config())
+            # wrap_async_mem0 is a no-op on 1.x and a 1.x-contract shim on 2.x.
+            self._mem0 = wrap_async_mem0(
+                Mem0AsyncMemory(config=MemoryConfig(**self._config.to_mem0_config()))
             )
         except Exception as e:
             self._mem0 = None

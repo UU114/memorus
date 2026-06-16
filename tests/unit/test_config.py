@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 
 import pytest
@@ -286,6 +287,49 @@ class TestFromDict:
         input_dict = {k: {} if k != "ace_enabled" else True for k in ace_keys}
         cfg = MemorusConfig.from_dict(input_dict)
         assert cfg.mem0_config == {}
+
+
+# ── mem0 2.x removed-key warning ──────────────────────────────────────
+
+
+class TestMem0RemovedKeyWarning:
+    """from_dict warns about keys removed in mem0 2.x but still forwards them."""
+
+    def test_graph_store_forwarded_and_warns(self, caplog) -> None:
+        with caplog.at_level(logging.WARNING, logger="memorus.core.config"):
+            cfg = MemorusConfig.from_dict({"graph_store": {"provider": "neo4j"}})
+        # 1.x passthrough preserved — key is still forwarded verbatim.
+        assert cfg.mem0_config["graph_store"] == {"provider": "neo4j"}
+        # And a heads-up warning was emitted naming the key + mem0 2.x.
+        assert any(
+            "graph_store" in r.message and "2.x" in r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        )
+
+    def test_custom_update_memory_prompt_warns_replacement(self, caplog) -> None:
+        with caplog.at_level(logging.WARNING, logger="memorus.core.config"):
+            cfg = MemorusConfig.from_dict(
+                {"custom_update_memory_prompt": "do the thing"}
+            )
+        assert cfg.mem0_config["custom_update_memory_prompt"] == "do the thing"
+        # Replacement key is named in the warning.
+        assert any(
+            "custom_instructions" in r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        )
+
+    def test_clean_config_logs_no_removed_key_warning(self, caplog) -> None:
+        with caplog.at_level(logging.WARNING, logger="memorus.core.config"):
+            MemorusConfig.from_dict(
+                {"vector_store": {"provider": "qdrant"}, "llm": {"provider": "openai"}}
+            )
+        assert not any(
+            "2.x" in r.message
+            for r in caplog.records
+            if r.levelno == logging.WARNING
+        )
 
 
 # ── to_mem0_config ────────────────────────────────────────────────────

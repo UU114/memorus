@@ -82,8 +82,13 @@ class Memory:
         try:
             from mem0 import Memory as Mem0Memory
 
+            from memorus.core._mem0_compat import wrap_mem0
+
             # mem0 >=1.0 takes a MemoryConfig object; from_config accepts the dict.
-            self._mem0 = Mem0Memory.from_config(self._config.to_mem0_config())
+            # wrap_mem0 is a no-op on 1.x and a 1.x-contract shim on 2.x.
+            self._mem0 = wrap_mem0(
+                Mem0Memory.from_config(self._config.to_mem0_config())
+            )
         except Exception as e:
             # If mem0 can't initialize (e.g., no API key), store the error.
             # Users must handle this if they need actual mem0 functionality.

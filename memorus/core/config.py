@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 # Valid reflector operating modes
 _VALID_REFLECTOR_MODES = frozenset({"rules", "llm", "hybrid"})
 
+# mem0 config keys that were REMOVED from MemoryConfig in mem0 2.0.0. On 2.x
+# these are silently dropped (pydantic extra="ignore"), so a caller relying on
+# them gets no error and no functionality. We still forward them (the repo is
+# pinned to mem0 <2.0 where they remain valid) but emit a heads-up warning.
+# Ref: mem0 2.0.0 MemoryConfig schema change — graph_store / enable_graph
+# replaced by the v2 graph API; custom_update_memory_prompt -> custom_instructions.
+_MEM0_KEYS_REMOVED_IN_2X = frozenset(
+    {"graph_store", "enable_graph", "custom_update_memory_prompt"}
+)
+
 
 # ---------------------------------------------------------------------------
 # Sub-configuration models
@@ -353,6 +363,22 @@ class MemorusConfig(BaseModel):
             else:
                 mem0_fields[key] = value
         ace_fields["mem0_config"] = mem0_fields
+        # Heads-up for keys removed in mem0 2.x. We still forward them (no
+        # version gate, no import coupling) so 1.x passthrough is unchanged.
+        for removed_key in sorted(mem0_fields.keys() & _MEM0_KEYS_REMOVED_IN_2X):
+            if removed_key == "custom_update_memory_prompt":
+                logger.warning(
+                    "mem0 config key %r is removed/ignored in mem0 2.x; "
+                    "use 'custom_instructions' as the 2.x replacement. "
+                    "Forwarding it as-is (valid on the pinned mem0 1.x).",
+                    removed_key,
+                )
+            else:
+                logger.warning(
+                    "mem0 config key %r is removed/ignored in mem0 2.x. "
+                    "Forwarding it as-is (valid on the pinned mem0 1.x).",
+                    removed_key,
+                )
         logger.debug(
             "MemorusConfig.from_dict: ace_keys=%s mem0_keys=%s",
             sorted(ace_fields.keys() - {"mem0_config"}),
