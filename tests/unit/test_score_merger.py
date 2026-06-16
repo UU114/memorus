@@ -184,8 +184,10 @@ class TestMergeFullMode:
             "old": _make_info("old", "old bullet", days_ago=30),
             "new": _make_info("new", "new bullet", days_ago=2),
         }
-        kw = {"old": 35.0, "new": 35.0}
-        sem = {"old": 1.0, "new": 1.0}
+        # Sub-max inputs (norm_kw=0.5) keep both scores below saturation so the
+        # 1.2x recency ratio stays observable after the [0,1] clamp.
+        kw = {"old": 17.5, "new": 17.5}
+        sem = {"old": 0.5, "new": 0.5}
         results = merger.merge(kw, sem, infos, now=_NOW)
         # New bullet gets 1.2x recency boost
         new_r = next(r for r in results if r.bullet_id == "new")
@@ -285,7 +287,9 @@ class TestMergeDegradedMode:
             "b1": _make_info("b1", "old", days_ago=30),
             "b2": _make_info("b2", "new", days_ago=2),
         }
-        results = merger.merge({"b1": 35.0, "b2": 35.0}, None, infos, now=_NOW)
+        # Sub-max keyword (norm_kw=0.5) leaves headroom below the [0,1] clamp so
+        # the recency difference still differentiates the two bullets.
+        results = merger.merge({"b1": 17.5, "b2": 17.5}, None, infos, now=_NOW)
         new_r = next(r for r in results if r.bullet_id == "b2")
         old_r = next(r for r in results if r.bullet_id == "b1")
         assert new_r.recency_boost == 1.2
@@ -374,6 +378,20 @@ class TestFormulaVerification:
         assert abs(r.semantic_score - 0.7) < 1e-9
         assert abs(r.decay_weight - 0.8) < 1e-9
         assert abs(r.recency_boost - 1.2) < 1e-9
+
+    def test_final_score_clamped_to_unit_interval(self) -> None:
+        """Recency/scope boosts (>1.0 multipliers) must never push final_score
+        above 1.0 — search scores are normalized to [0,1] (invariant 3)."""
+        config = RetrievalConfig(recency_boost_days=7, recency_boost_factor=1.5)
+        merger = ScoreMerger(config)
+        # Fresh bullet + full keyword & semantic match: blended=1.0, decay=1.0,
+        # recency=1+1.5=2.5 -> unclamped product would be 2.5.
+        infos = {"b1": _make_info("b1", "test", days_ago=0, decay_weight=1.0)}
+        results = merger.merge(
+            {"b1": MAX_KEYWORD_SCORE}, {"b1": 1.0}, infos, now=_NOW
+        )
+        assert 0.0 <= results[0].final_score <= 1.0
+        assert abs(results[0].final_score - 1.0) < 1e-9  # saturated, not 2.5
 
     def test_formula_degraded_mode(self) -> None:
         """In degraded mode, kw_weight=1.0 and semantic is ignored."""

@@ -185,8 +185,10 @@ class ScoreMerger:
             # Scope boost: bullets matching the target scope get a boost
             scope_b = self._compute_scope_boost(info.scope, target_scope)
 
-            # Final composite score
-            final = blended * decay_w * recency * scope_b
+            # Final composite score. Recency/scope are >1.0 boost multipliers,
+            # so clamp to [0,1] to honor the documented score-normalization
+            # invariant (search scores are normalized to [0,1]).
+            final = max(0.0, min(1.0, blended * decay_w * recency * scope_b))
 
             scored.append(ScoredBullet(
                 bullet_id=bid,

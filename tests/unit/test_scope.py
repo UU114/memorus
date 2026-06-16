@@ -221,13 +221,15 @@ class TestScoreMergerScopeBoost:
             "b1": _make_info("b1", "project", scope="project:myapp", days_ago=30),
             "b2": _make_info("b2", "global", scope="global", days_ago=30),
         }
-        kw = {"b1": 35.0, "b2": 35.0}
+        # Sub-max keyword (norm_kw=0.5) keeps both scores below the [0,1]
+        # saturation clamp so the 1.3x scope boost stays observable.
+        kw = {"b1": 17.5, "b2": 17.5}
         results = merger.merge(kw, None, infos, target_scope="project:myapp")
         b1 = next(r for r in results if r.bullet_id == "b1")
         b2 = next(r for r in results if r.bullet_id == "b2")
-        # b1 gets 1.3x boost, b2 gets 1.0x
-        assert abs(b1.final_score - 1.3) < 1e-9
-        assert abs(b2.final_score - 1.0) < 1e-9
+        # b1 gets 1.3x boost (0.5*1.3=0.65), b2 gets 1.0x (0.5)
+        assert abs(b1.final_score - 0.65) < 1e-9
+        assert abs(b2.final_score - 0.5) < 1e-9
         assert b1.final_score > b2.final_score
 
     def test_scope_boost_combined_with_recency(self) -> None:
@@ -237,18 +239,22 @@ class TestScoreMergerScopeBoost:
         infos = {
             "b1": _make_info("b1", "recent scoped", scope="project:myapp", days_ago=2),
         }
-        kw = {"b1": 35.0}
+        # norm_kw=0.5 (sub-max) keeps the product within [0,1] so the combined
+        # recency*scope boost is observable rather than clamped at 1.0.
+        kw = {"b1": 17.5}
         results = merger.merge(kw, None, infos, target_scope="project:myapp", now=_NOW)
-        # FinalScore = 1.0 * 1.0 * 1.2 * 1.3 = 1.56
-        expected = 1.0 * 1.0 * 1.2 * 1.3
+        # FinalScore = 0.5 * 1.0 * 1.2 * 1.3 = 0.78
+        expected = 0.5 * 1.0 * 1.2 * 1.3
         assert abs(results[0].final_score - expected) < 1e-9
 
     def test_custom_scope_boost_value(self) -> None:
         cfg = RetrievalConfig(scope_boost=2.0)
         merger = ScoreMerger(cfg)
         infos = {"b1": _make_info("b1", "test", scope="project:x", days_ago=30)}
-        results = merger.merge({"b1": 35.0}, None, infos, target_scope="project:x")
-        assert abs(results[0].final_score - 2.0) < 1e-9
+        # norm_kw=0.4 (14/35) so 0.4*2.0=0.8 stays inside [0,1] and the custom
+        # 2.0 boost factor is verifiable without hitting the clamp.
+        results = merger.merge({"b1": 14.0}, None, infos, target_scope="project:x")
+        assert abs(results[0].final_score - 0.8) < 1e-9
 
     def test_global_scope_never_boosted(self) -> None:
         """Global bullets should NOT receive scope boost even with target_scope."""
@@ -727,9 +733,11 @@ class TestScopeEndToEnd:
         """With scope set, project-scoped bullets should rank above global."""
         cfg = RetrievalConfig(scope_boost=1.3)
         engine = GeneratorEngine(config=cfg)
+        # decay_weight=0.5 keeps both scores below the [0,1] saturation clamp so
+        # the scope boost differentiates rank rather than both pinning to 1.0.
         bullets = [
-            _make_bullet("b_global", "git rebase interactive", scope="global"),
-            _make_bullet("b_project", "git rebase interactive", scope="project:myapp"),
+            _make_bullet("b_global", "git rebase interactive", scope="global", decay_weight=0.5),
+            _make_bullet("b_project", "git rebase interactive", scope="project:myapp", decay_weight=0.5),
         ]
         results = engine.search("git rebase", bullets, scope="project:myapp")
         assert len(results) == 2
@@ -772,10 +780,12 @@ class TestScopeEndToEnd:
         infos = {
             "b1": _make_info("b1", "test", scope="project:x", days_ago=3, decay_weight=0.8),
         }
-        kw = {"b1": 25.0}
+        # norm_kw=0.5 (17.5/35) keeps the product (0.5*0.8*1.2*1.5=0.72) within
+        # [0,1] so the full formula is verified below the saturation clamp.
+        kw = {"b1": 17.5}
         results = merger.merge(kw, None, infos, target_scope="project:x", now=_NOW)
 
-        norm_kw = 25.0 / 35.0
+        norm_kw = 17.5 / 35.0
         blended = norm_kw * 1.0  # degraded mode kw_weight = 1.0
         expected = blended * 0.8 * 1.2 * 1.5
 
