@@ -31,6 +31,7 @@ def enabled_config() -> TeamConfig:
         enabled=True,
         server_url="https://sync.example.com",
         team_id="test-team",
+        auth_token="test-token",
         subscribed_tags=["python", "devops"],
         cache_max_bullets=500,
         cache_ttl_minutes=30,
@@ -218,6 +219,17 @@ class TestTeamSync:
         data = json.loads(result.output)
         assert "error" in data
         assert "server_url" in data["error"]
+
+    def test_sync_no_auth_token_aborts(
+        self, runner: CliRunner, enabled_config: TeamConfig
+    ) -> None:
+        """Fail-closed: sync must abort when no auth token is configured (PY-TEAM-1)."""
+        enabled_config.auth_token = None
+        with patch(_ENSURE, return_value=(enabled_config, None)):
+            result = runner.invoke(team_group, ["sync", "--json"])
+        assert result.exit_code != 0
+        data = json.loads(result.output)
+        assert "auth token" in data["error"].lower()
 
     def test_sync_success(
         self, runner: CliRunner, enabled_config: TeamConfig

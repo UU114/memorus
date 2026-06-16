@@ -289,6 +289,14 @@ class Nominator:
         if user_approved_content is not None:
             redacted = self._redactor.apply_user_edits(redacted, user_approved_content)
 
+        # Fail-closed: if redaction stripped everything, there is no shareable
+        # signal left — abort rather than upload an all-`[REDACTED]` bullet.
+        if redacted.is_fully_redacted:
+            return NominationResult(
+                success=False,
+                error="Content fully redacted — nomination aborted",
+            )
+
         # Finalize into upload-ready dict
         final = self._redactor.finalize(redacted)
         # Merge bullet metadata (except raw content which is replaced by redacted)
@@ -683,6 +691,12 @@ async def submit_supersede(
 
     content = proposal.new_content
     redacted = redactor.redact_l1(content)
+    # Fail-closed: don't upload an all-`[REDACTED]` supersede proposal.
+    if redacted.is_fully_redacted:
+        return NominationResult(
+            success=False,
+            error="Content fully redacted — nomination aborted",
+        )
     final = redactor.finalize(redacted)
     content = final.get("content", content)
 

@@ -354,11 +354,16 @@ class TestSupersedeFlow:
             reason="Updated security practice",
         )
 
-        # Mock redactor: strips sensitive data
-        mock_redactor = MagicMock()
-        mock_redactor.redact_l1.return_value = (
+        # Mock redactor: strips sensitive data. redact_l1 returns a
+        # RedactedResult-like object (not a bare string) so the fail-closed
+        # is_fully_redacted guard can inspect it.
+        mock_redacted = MagicMock()
+        mock_redacted.clean_content = (
             "Use secure tokens instead of API keys (token: [REDACTED])"
         )
+        mock_redacted.is_fully_redacted = False
+        mock_redactor = MagicMock()
+        mock_redactor.redact_l1.return_value = mock_redacted
         mock_redactor.finalize.return_value = {
             "content": "Use secure tokens instead of API keys (token: [REDACTED])"
         }

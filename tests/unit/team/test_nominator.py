@@ -40,14 +40,16 @@ def _mock_redactor() -> MagicMock:
     """Return a mock Redactor with L1 / apply_user_edits / finalize stubs."""
     redactor = MagicMock()
 
-    # redact_l1 returns a mock RedactedResult
+    # redact_l1 returns a mock RedactedResult (not fully redacted by default)
     redacted = MagicMock()
     redacted.clean_content = "redacted content"
+    redacted.is_fully_redacted = False
     redactor.redact_l1.return_value = redacted
 
     # apply_user_edits returns a new mock
     edited = MagicMock()
     edited.clean_content = "user edited content"
+    edited.is_fully_redacted = False
     redactor.apply_user_edits.return_value = edited
 
     # finalize returns a plain dict
@@ -246,6 +248,23 @@ class TestNominate:
         result = await nom.nominate(_make_bullet())
         assert result.success is False
         assert "redactor" in result.error.lower()
+
+    @pytest.mark.asyncio
+    async def test_nominate_aborts_when_fully_redacted(
+        self, config: AutoNominateConfig
+    ) -> None:
+        """Fail-closed: a fully-redacted bullet must NOT be uploaded (PY-TEAM-2)."""
+        redactor = _mock_redactor()
+        redactor.redact_l1.return_value.is_fully_redacted = True
+        client = _mock_sync_client()
+        nom = Nominator(config=config, redactor=redactor, sync_client=client)
+
+        result = await nom.nominate(_make_bullet())
+
+        assert result.success is False
+        assert "fully redacted" in result.error.lower()
+        # Nothing must have been finalized or uploaded.
+        redactor.finalize.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_nominate_increments_prompt_count(

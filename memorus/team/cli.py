@@ -112,6 +112,17 @@ def team_sync(full: bool, as_json: bool) -> None:
             click.echo(f"Error: {msg}", err=True)
         sys.exit(1)
 
+    if not config.auth_token:
+        msg = (
+            "No team auth token configured. Set MEMORUS_TEAM_AUTH_TOKEN "
+            "(or auth_token in team config) before syncing."
+        )
+        if as_json:
+            click.echo(json.dumps({"error": msg}))
+        else:
+            click.echo(f"Error: {msg}", err=True)
+        sys.exit(1)
+
     try:
         from memorus.team.cache_storage import TeamCacheStorage
         from memorus.team.sync_client import AceSyncClient
@@ -120,7 +131,7 @@ def team_sync(full: bool, as_json: bool) -> None:
         cache = TeamCacheStorage(config)
         client = AceSyncClient(
             server_url=config.server_url,
-            auth_token="",  # Would come from config in real usage
+            auth_token=config.auth_token,
             team_id=config.team_id,
         )
         manager = SyncManager(cache, client, config)

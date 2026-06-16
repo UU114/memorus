@@ -112,6 +112,9 @@ class TeamConfig(BaseModel):
     enabled: bool = False
     server_url: str | None = None
     team_id: str | None = None
+    # Bearer token for authenticating sync/upload requests to the team server.
+    # Prefer supplying via the MEMORUS_TEAM_AUTH_TOKEN env var, not on disk.
+    auth_token: str | None = None
     subscribed_tags: list[str] = Field(default_factory=list)
     cache_max_bullets: int = 2000
     cache_ttl_minutes: int = 60
@@ -161,6 +164,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
       MEMORUS_TEAM_ENABLED        -> enabled (bool)
       MEMORUS_TEAM_SERVER_URL     -> server_url (str)
       MEMORUS_TEAM_TEAM_ID        -> team_id (str)
+      MEMORUS_TEAM_AUTH_TOKEN     -> auth_token (str)
       MEMORUS_TEAM_SUBSCRIBED_TAGS -> subscribed_tags (comma-separated)
       MEMORUS_TEAM_CACHE_MAX_BULLETS -> cache_max_bullets (int)
       MEMORUS_TEAM_CACHE_TTL_MINUTES -> cache_ttl_minutes (int)
@@ -169,6 +173,7 @@ def _apply_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
         "MEMORUS_TEAM_ENABLED": ("enabled", bool),
         "MEMORUS_TEAM_SERVER_URL": ("server_url", str),
         "MEMORUS_TEAM_TEAM_ID": ("team_id", str),
+        "MEMORUS_TEAM_AUTH_TOKEN": ("auth_token", str),
         "MEMORUS_TEAM_SUBSCRIBED_TAGS": ("subscribed_tags", list),
         "MEMORUS_TEAM_CACHE_MAX_BULLETS": ("cache_max_bullets", int),
         "MEMORUS_TEAM_CACHE_TTL_MINUTES": ("cache_ttl_minutes", int),

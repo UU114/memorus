@@ -272,7 +272,9 @@ def _passthrough_redactor(content: str) -> MagicMock:
     assert on the forwarded content supply an explicit no-op redactor.
     """
     r = MagicMock()
-    r.redact_l1.return_value = MagicMock()
+    redacted = MagicMock()
+    redacted.is_fully_redacted = False
+    r.redact_l1.return_value = redacted
     r.finalize.return_value = {"content": content}
     return r
 
@@ -326,6 +328,7 @@ class TestSubmitSupersede:
 
         mock_redactor = MagicMock()
         redacted_result = MagicMock()
+        redacted_result.is_fully_redacted = False
         mock_redactor.redact_l1.return_value = redacted_result
         mock_redactor.finalize.return_value = {"content": "sanitized content"}
 

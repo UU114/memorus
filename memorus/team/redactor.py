@@ -361,6 +361,13 @@ class Redactor:
         Returns:
             Dict with sanitized content and metadata.
         """
+        # Defense-in-depth fail-closed: a fully-redacted result carries no
+        # shareable signal; refuse to produce an upload payload from it so no
+        # caller can accidentally publish an all-`[REDACTED]` bullet.
+        if result.is_fully_redacted:
+            raise ValueError(
+                "Cannot finalize fully-redacted content for team sharing"
+            )
         summary = context_summary or result.context_summary
         return {
             "content": result.clean_content,
