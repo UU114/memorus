@@ -64,10 +64,12 @@ BUILTIN_PATTERNS: list[tuple[str, str, str]] = [
         r"[A-Za-z0-9/+=]{40}",
         r"\1<AWS_SECRET>",
     ),
-    # 8. Database URL with credentials
+    # 8. Database URL with credentials.
+    # Username may be empty (e.g. `redis://:password@host`, a common
+    # password-only form) — `[^:@]*` (not `[^:]+`) so that leak is caught too.
     (
         "db_url_creds",
-        r"((?:postgres|postgresql|mysql|mongodb|redis|amqp)(?:ql)?://)([^:]+):([^@]+)@",
+        r"((?:postgres|postgresql|mysql|mongodb|redis|amqp)(?:ql)?://)([^:@]*):([^@]+)@",
         r"\1<REDACTED>:<REDACTED>@",
     ),
     # 9. Generic API key parameters

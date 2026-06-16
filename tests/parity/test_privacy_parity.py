@@ -170,6 +170,20 @@ EXPECTED: dict[str, tuple[str, str, str, str]] = {
         "<REDACTED>",
         "[REDACTED:DB_CONNECTION]",
     ),
+    # password-only userinfo form (empty username) — X-PARITY-5 leak fix.
+    "db_redis_passonly": (
+        "redis://:s3cretPass@cache.example.com:6379/0",
+        "s3cretPass",
+        "<REDACTED>",
+        "[REDACTED:DB_CONNECTION]",
+    ),
+    # credential carried in the URL query string — must not leak.
+    "db_redis_query": (
+        "redis://cache.example.com:6379?password=s3cretPass",
+        "s3cretPass",
+        "<REDACTED>",
+        "[REDACTED:DB_CONNECTION]",
+    ),
     # windows path (any drive)
     "win_path_d": (
         r"file at D:\Users\JaneDoe\config",
