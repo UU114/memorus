@@ -64,3 +64,4 @@ docs/sprint-plan-*.md
 docs/product-brief-*.md
 docs/tech-spec-*.md
 ace-team-memory-architecture*.md
+.audit_*.json

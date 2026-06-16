@@ -21,7 +21,7 @@ spec:
         fsGroup: 65534
       containers:
         - name: memorus
-          image: ghcr.io/hanmahong5-arch/lurus-memorus:main
+          image: ghcr.io/lurustech/lurus-memorus:main
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8880

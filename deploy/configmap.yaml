@@ -4,9 +4,11 @@ metadata:
   name: lurus-memorus-config
   namespace: lurus-system
 data:
-  ace_enabled: "false"
+  ace_enabled: "true"
   # Reflector mode: rules | hybrid | llm
-  reflector_mode: "hybrid"
+  # Default "rules" = fully offline (matches Rust pod + documented default).
+  # hybrid/llm require a configured LLM and are explicit opt-in.
+  reflector_mode: "rules"
   # Decay half-life in days
   decay_half_life_days: "30"
   # Max search results per query
