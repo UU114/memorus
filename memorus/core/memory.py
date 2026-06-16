@@ -1001,9 +1001,15 @@ class Memory:
                     # Insert via add()
                     try:
                         mem0_meta = BulletFactory.to_mem0_metadata(meta_obj)
+                        # ACE import: content is an already-distilled bullet
+                        # reconstructed from the export payload, not a raw
+                        # conversation. infer=False stores it as-is so mem0 does
+                        # not re-extract redundant/mangled sub-facts (the proxy
+                        # branch below keeps native inference).
                         self._ensure_mem0().add(
                             content,
                             metadata=mem0_meta,
+                            infer=False,
                         )
                         imported += 1
                     except Exception:

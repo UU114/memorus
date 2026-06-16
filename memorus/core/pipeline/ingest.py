@@ -197,12 +197,18 @@ class IngestPipeline:
                         "IngestPipeline step 4: mem0.add content=%r section=%s score=%.1f",
                         bullet.content[:60], bullet.section.value, bullet.instructivity_score,
                     )
+                    # ACE is the inference layer: bullet.content is already a
+                    # Reflector-distilled atomic fact. Store it verbatim with
+                    # infer=False so mem0 does not re-run its own LLM extraction
+                    # (which would split/mangle one finished bullet into N
+                    # memories, breaking the bullet<->row 1:1 model ACE relies on).
                     self._mem0_add(
                         bullet.content,
                         user_id=user_id,
                         agent_id=agent_id,
                         run_id=run_id,
                         metadata=merged_meta,
+                        infer=False,
                         **kwargs,
                     )
                 result.bullets_added += 1
