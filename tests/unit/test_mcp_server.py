@@ -9,6 +9,32 @@ from unittest.mock import MagicMock, mock_open, patch
 import pytest
 
 
+class TestConfinePath:
+    """PY-EXT-6: export/import file paths must be confined to the file root."""
+
+    def test_path_inside_root_allowed(self, tmp_path) -> None:
+        from memorus.ext import mcp_server
+
+        with patch.dict(os.environ, {"MEMORUS_MCP_FILE_ROOT": str(tmp_path)}):
+            target = mcp_server._confine_path(str(tmp_path / "export.json"))
+            assert str(target).startswith(str(tmp_path.resolve()))
+
+    def test_path_traversal_rejected(self, tmp_path) -> None:
+        from memorus.ext import mcp_server
+
+        with patch.dict(os.environ, {"MEMORUS_MCP_FILE_ROOT": str(tmp_path)}):
+            with pytest.raises(ValueError, match="escapes the allowed root"):
+                mcp_server._confine_path(str(tmp_path / ".." / ".." / "etc" / "passwd"))
+
+    def test_absolute_outside_root_rejected(self, tmp_path) -> None:
+        from memorus.ext import mcp_server
+
+        outside = tmp_path.parent / "outside.json"
+        with patch.dict(os.environ, {"MEMORUS_MCP_FILE_ROOT": str(tmp_path)}):
+            with pytest.raises(ValueError, match="escapes the allowed root"):
+                mcp_server._confine_path(str(outside))
+
+
 class TestCreateMcpServer:
     """Test MCP server factory and tool registration."""
 

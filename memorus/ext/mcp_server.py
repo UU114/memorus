@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,41 @@ except ImportError:
     FastMCP = None  # type: ignore[assignment,misc]
 
 _memory_singleton: Any = None
+
+# Allowed file formats for the export/import tools.
+_EXPORT_FORMATS = {"json", "markdown", "md"}
+_IMPORT_FORMATS = {"json", "jsonl"}
+
+
+def _file_root() -> Path:
+    """Base directory that export/import file paths are confined to.
+
+    Defaults to ``MEMORUS_MCP_FILE_ROOT``, then ``MEMORUS_DATA_DIR``, then the
+    user's home directory. Any path outside this root is rejected, so an MCP
+    client cannot use the file tools for arbitrary read/write (path traversal).
+    """
+    root = (
+        os.environ.get("MEMORUS_MCP_FILE_ROOT")
+        or os.environ.get("MEMORUS_DATA_DIR")
+        or os.path.expanduser("~")
+    )
+    return Path(root).resolve()
+
+
+def _confine_path(filepath: str) -> Path:
+    """Resolve *filepath* and verify it stays within the allowed file root.
+
+    Raises:
+        ValueError: if the resolved path escapes the configured root.
+    """
+    base = _file_root()
+    target = Path(os.path.expanduser(filepath)).resolve()
+    if target != base and base not in target.parents:
+        raise ValueError(
+            f"filepath {filepath!r} escapes the allowed root {base}; "
+            f"set MEMORUS_MCP_FILE_ROOT to widen access"
+        )
+    return target
 
 
 def _get_memory(config: dict[str, Any] | None = None) -> Any:
@@ -132,9 +168,13 @@ def create_mcp_server(config: dict[str, Any] | None = None) -> FastMCP:
         """Export all memories as JSON or Markdown for backup or migration."""
         import json as json_mod
 
+        if format not in _EXPORT_FORMATS:
+            raise ValueError(
+                f"unsupported export format {format!r}; use one of {sorted(_EXPORT_FORMATS)}"
+            )
+        path = _confine_path(filepath)
         mem = _get_memory(config)
         result = await asyncio.to_thread(mem.export, format=format, scope=scope)
-        path = os.path.expanduser(filepath)
         if format == "json":
             with open(path, "w", encoding="utf-8") as f:
                 json_mod.dump(result, f, ensure_ascii=False, indent=2)
@@ -142,7 +182,7 @@ def create_mcp_server(config: dict[str, Any] | None = None) -> FastMCP:
             with open(path, "w", encoding="utf-8") as f:
                 f.write(result)
         total = result.get("total", 0) if isinstance(result, dict) else "unknown"
-        return {"status": "exported", "filepath": path, "total": total, "format": format}
+        return {"status": "exported", "filepath": str(path), "total": total, "format": format}
 
     @mcp.tool()
     async def import_memories(
@@ -152,7 +192,11 @@ def create_mcp_server(config: dict[str, Any] | None = None) -> FastMCP:
         """Import memories from a JSON payload. Auto-deduplicates against existing knowledge."""
         import json as json_mod
 
-        path = os.path.expanduser(filepath)
+        if format not in _IMPORT_FORMATS:
+            raise ValueError(
+                f"unsupported import format {format!r}; use one of {sorted(_IMPORT_FORMATS)}"
+            )
+        path = _confine_path(filepath)
         with open(path, encoding="utf-8") as f:
             data = json_mod.load(f)
         mem = _get_memory(config)
@@ -189,6 +233,18 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
+
+    # Trust-boundary notice (PY-EXT-4): the stdio MCP transport has no
+    # transport-level authentication — every tool, including the destructive
+    # ones (delete, import, decay sweep), is available to whatever process is
+    # wired to this server's stdin/stdout. Only launch it from a trusted client.
+    # File tools are confined to MEMORUS_MCP_FILE_ROOT (default: $HOME).
+    logger.warning(
+        "memorus-mcp: stdio transport is UNAUTHENTICATED — all tools are exposed "
+        "to the connected client. Only launch from a trusted MCP host. "
+        "File access confined to %s.",
+        _file_root(),
+    )
 
     server = create_mcp_server(config)
     server.run()
