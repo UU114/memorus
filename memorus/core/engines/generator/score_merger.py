@@ -149,7 +149,8 @@ class ScoreMerger:
 
         if now is None:
             now = datetime.now(timezone.utc)
-        scored: list[ScoredBullet] = []
+        # Pairs of (raw_composite_for_ranking, ScoredBullet) — see ranking note below.
+        scored: list[tuple[float, ScoredBullet]] = []
 
         for bid in all_ids:
             info = bullet_infos.get(bid)
@@ -185,12 +186,17 @@ class ScoreMerger:
             # Scope boost: bullets matching the target scope get a boost
             scope_b = self._compute_scope_boost(info.scope, target_scope)
 
-            # Final composite score. Recency/scope are >1.0 boost multipliers,
-            # so clamp to [0,1] to honor the documented score-normalization
-            # invariant (search scores are normalized to [0,1]).
-            final = max(0.0, min(1.0, blended * decay_w * recency * scope_b))
+            # Composite score. Recency/scope are >1.0 boost multipliers, so the
+            # raw product can exceed 1.0. We RANK on the raw product (so the
+            # boosts still differentiate already-saturated bullets) but expose
+            # final_score clamped to [0,1], honoring the documented
+            # score-normalization invariant (search scores are normalized to
+            # [0,1]). Clamping before ranking would flatten the boost and lose
+            # the ordering it is meant to produce.
+            raw_composite = blended * decay_w * recency * scope_b
+            final = max(0.0, min(1.0, raw_composite))
 
-            scored.append(ScoredBullet(
+            scored.append((raw_composite, ScoredBullet(
                 bullet_id=bid,
                 content=info.content,
                 final_score=final,
@@ -199,11 +205,12 @@ class ScoreMerger:
                 decay_weight=decay_w,
                 recency_boost=recency,
                 metadata=dict(info.metadata),
-            ))
+            )))
 
-        # Sort by final_score descending
-        scored.sort(key=lambda s: s.final_score, reverse=True)
-        return scored
+        # Rank on the unclamped composite so boosts still order saturated
+        # bullets; return the bullets carrying their clamped final_score.
+        scored.sort(key=lambda t: t[0], reverse=True)
+        return [sb for _, sb in scored]
 
     def compute_recency_boost(
         self,
