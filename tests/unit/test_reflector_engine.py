@@ -249,8 +249,8 @@ class TestStage2Failure:
 
 
 class TestStage3Failure:
-    def test_stage3_failure_uses_original(self) -> None:
-        """Mock sanitizer to raise -> original content preserved."""
+    def test_stage3_failure_drops_candidate_fail_closed(self) -> None:
+        """Mock sanitizer to raise -> candidate is DROPPED, never persisted unsanitized."""
         engine = ReflectorEngine()
 
         # Create a scored candidate with known content
@@ -271,9 +271,40 @@ class TestStage3Failure:
         engine._sanitizer.sanitize.side_effect = RuntimeError("sanitizer boom")
 
         result = engine._run_stage3([candidate])
+        # Fail-closed: the unsanitizable candidate must not survive to persistence.
+        assert result == []
+
+    def test_stage3_drops_only_failing_candidate(self) -> None:
+        """A sanitize failure on one candidate must not drop the clean ones."""
+        engine = ReflectorEngine()
+
+        def _make(content: str) -> ScoredCandidate:
+            return ScoredCandidate(
+                pattern=DetectedPattern(
+                    pattern_type="error_fix", content=content, confidence=0.8
+                ),
+                section=BulletSection.DEBUGGING,
+                knowledge_type=KnowledgeType.PITFALL,
+                instructivity_score=70.0,
+            )
+
+        good, bad = _make("clean content"), _make("explodes")
+
+        def _sanitize(text: str):  # type: ignore[no-untyped-def]
+            if text == "explodes":
+                raise RuntimeError("boom")
+            r = MagicMock()
+            r.was_modified = False
+            r.clean_content = text
+            r.filtered_items = []
+            return r
+
+        engine._sanitizer = MagicMock()
+        engine._sanitizer.sanitize.side_effect = _sanitize
+
+        result = engine._run_stage3([good, bad])
         assert len(result) == 1
-        # Content should still be the original (unsanitized)
-        assert "Original sensitive content" in result[0].pattern.content
+        assert result[0].pattern.content == "clean content"
 
 
 # -- Test 11: Stage 4 failure -> fallback distill ----------------------------

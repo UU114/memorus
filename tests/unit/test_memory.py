@@ -514,14 +514,14 @@ class TestSanitization:
         assert result == [{"role": "system", "text": "no content key"}]
         mock_sanitizer.sanitize.assert_not_called()
 
-    def test_sanitize_returns_original_on_error(self, memory: Memory) -> None:
-        """Sanitization errors return original messages (graceful degradation)."""
+    def test_sanitize_raises_on_error_fail_closed(self, memory: Memory) -> None:
+        """Sanitization errors propagate (fail-closed) so raw content is never persisted."""
         mock_sanitizer = MagicMock()
         mock_sanitizer.sanitize.side_effect = RuntimeError("sanitizer broken")
         memory._sanitizer = mock_sanitizer
 
-        result = memory._sanitize_messages("raw text")
-        assert result == "raw text"
+        with pytest.raises(RuntimeError, match="sanitizer broken"):
+            memory._sanitize_messages("raw text")
 
     def test_sanitize_no_sanitizer_returns_original(self, memory: Memory) -> None:
         """When no sanitizer is set, messages pass through unchanged."""
@@ -562,8 +562,12 @@ class TestSanitization:
         call_args = memory._mem0.add.call_args
         assert call_args[0][0] == "sanitized message"
 
-    def test_add_without_always_sanitize_no_sanitization(self, memory: Memory) -> None:
-        """When always_sanitize is False (default), add() does not sanitize."""
+    def test_add_ace_off_always_off_no_sanitization(self, memory: Memory) -> None:
+        """Genuine opt-out: ACE off AND always_sanitize off -> add() does not sanitize."""
+        memory._config = MemorusConfig.from_dict({
+            "ace_enabled": False,
+            "privacy": {"always_sanitize": False},
+        })
         mock_sanitizer = MagicMock()
         memory._sanitizer = mock_sanitizer
 
@@ -572,6 +576,26 @@ class TestSanitization:
         mock_sanitizer.sanitize.assert_not_called()
         call_args = memory._mem0.add.call_args
         assert call_args[0][0] == "raw message"
+
+    def test_add_ace_on_pipeline_none_sanitizes_degraded(self, memory: Memory) -> None:
+        """Degraded ACE (enabled but pipeline=None) must still sanitize, even when
+        always_sanitize is False -- otherwise an ACE init failure silently strips
+        sanitization (PY-CORE-1 GAP B)."""
+        memory._config = MemorusConfig.from_dict({
+            "ace_enabled": True,
+            "privacy": {"always_sanitize": False},
+        })
+        memory._ingest_pipeline = None  # ACE init failed -> proxy fallback
+        mock_sanitizer = MagicMock()
+        mock_result = MagicMock()
+        mock_result.clean_content = "sanitized message"
+        mock_sanitizer.sanitize.return_value = mock_result
+        memory._sanitizer = mock_sanitizer
+
+        memory.add("raw sensitive message", user_id="u1")
+
+        mock_sanitizer.sanitize.assert_called_once_with("raw sensitive message")
+        assert memory._mem0.add.call_args[0][0] == "sanitized message"
 
 
 # ---------------------------------------------------------------------------

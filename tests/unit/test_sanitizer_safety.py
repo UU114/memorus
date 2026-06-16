@@ -158,13 +158,14 @@ class TestMemoryAlwaysSanitize:
         # Assistant message unchanged
         assert called_msgs[1]["content"] == "Noted!"
 
-    def test_sanitizer_failure_in_memory_nonfatal(self, _make_memory):
-        """If sanitizer crashes in Memory, add() still works."""
+    def test_sanitizer_failure_in_memory_fail_closed(self, _make_memory):
+        """If sanitizer crashes in Memory, add() must abort (fail-closed) and never
+        persist the raw content."""
         m = _make_memory(ace_enabled=False, always_sanitize=True)
         m._sanitizer = MagicMock()
         m._sanitizer.sanitize.side_effect = RuntimeError("boom")
 
-        # Should not crash
-        m.add("test content", user_id="u1")
-        # Original message passed through
-        assert m._mem0.add.call_args[0][0] == "test content"
+        with pytest.raises(RuntimeError, match="boom"):
+            m.add("test content", user_id="u1")
+        # Raw content must NOT have reached the store.
+        m._mem0.add.assert_not_called()

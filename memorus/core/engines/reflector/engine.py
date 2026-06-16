@@ -345,26 +345,35 @@ class ReflectorEngine:
     def _run_stage3(
         self, candidates: list[ScoredCandidate]
     ) -> list[ScoredCandidate]:
-        """Stage 3: Sanitize content.  Failure -> use original (unsanitized)."""
-        try:
-            modified_count = 0
-            for c in candidates:
+        """Stage 3: Sanitize content. Fail-closed: a candidate whose content
+        cannot be sanitized is DROPPED, never persisted unsanitized."""
+        sanitized: list[ScoredCandidate] = []
+        modified_count = 0
+        dropped_count = 0
+        for c in candidates:
+            try:
                 result = self._sanitizer.sanitize(c.pattern.content)
-                if result.was_modified:
-                    modified_count += 1
-                    logger.debug(
-                        "ReflectorEngine stage3: sanitized content (filtered %d items)",
-                        len(result.filtered_items),
-                    )
-                # Replace pattern content with sanitized version via model_copy
-                c.pattern = c.pattern.model_copy(
-                    update={"content": result.clean_content}
+            except Exception as e:
+                # Fail-closed: drop this candidate rather than persist raw content.
+                dropped_count += 1
+                logger.error(
+                    "ReflectorEngine stage3: dropping candidate, sanitize failed: %s", e
                 )
-            logger.debug("ReflectorEngine stage3: sanitized %d/%d candidates", modified_count, len(candidates))
-            return candidates
-        except Exception as e:
-            logger.warning("Stage 3 (PrivacySanitizer) failed: %s", e)
-            return candidates  # graceful degradation: use unsanitized
+                continue
+            if result.was_modified:
+                modified_count += 1
+                logger.debug(
+                    "ReflectorEngine stage3: sanitized content (filtered %d items)",
+                    len(result.filtered_items),
+                )
+            # Replace pattern content with sanitized version via model_copy
+            c.pattern = c.pattern.model_copy(update={"content": result.clean_content})
+            sanitized.append(c)
+        logger.debug(
+            "ReflectorEngine stage3: sanitized %d, dropped %d, kept %d/%d candidates",
+            modified_count, dropped_count, len(sanitized), len(candidates),
+        )
+        return sanitized
 
     def _run_stage4(
         self, candidates: list[ScoredCandidate]

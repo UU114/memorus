@@ -227,8 +227,12 @@ class AsyncMemory:
                 return sanitized
             return messages
         except Exception as e:
-            logger.warning("Sanitization failed: %s", e)
-            return messages
+            # Fail-closed: a sanitizer error must abort the ingest, never fall
+            # back to persisting the raw (potentially PII-bearing) input.
+            logger.error(
+                "Sanitization failed; aborting to avoid persisting raw content: %s", e
+            )
+            raise
 
     # ---- ACE-specific (placeholder) ----------------------------------------
 

@@ -310,11 +310,19 @@ class Memory:
             user_id, effective_scope, self._config.ace_enabled,
             type(messages).__name__,
         )
-        # Sanitize if always_sanitize is on, even in proxy mode
+        # When the request will NOT pass through the ACE IngestPipeline (which
+        # sanitizes internally and fail-closed), we must sanitize here to honor
+        # the fail-closed privacy invariant. Covers two proxy paths:
+        #   - ACE disabled + always_sanitize on
+        #   - ACE enabled but pipeline failed to init (degraded -> proxy mode);
+        #     without this, an ACE init failure would silently strip sanitization.
+        _bypasses_ace_pipeline = (
+            not self._config.ace_enabled or self._ingest_pipeline is None
+        )
         if (
-            not self._config.ace_enabled
-            and self._config.privacy.always_sanitize
-            and self._sanitizer
+            self._sanitizer
+            and _bypasses_ace_pipeline
+            and (self._config.privacy.always_sanitize or self._config.ace_enabled)
         ):
             messages = self._sanitize_messages(messages)
 
@@ -1406,8 +1414,12 @@ class Memory:
                 return sanitized
             return messages
         except Exception as e:
-            logger.warning("Sanitization failed: %s", e)
-            return messages
+            # Fail-closed: a sanitizer error must abort the ingest, never fall
+            # back to persisting the raw (potentially PII-bearing) input.
+            logger.error(
+                "Sanitization failed; aborting to avoid persisting raw content: %s", e
+            )
+            raise
 
     @property
     def config(self) -> Any:
