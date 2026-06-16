@@ -25,7 +25,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "mem0ai>=1.0.0",
+    "mem0ai>=1.0.0,<2.0",
     "pydantic>=2.0",
     "click>=8.0",
 ]
