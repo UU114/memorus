@@ -115,6 +115,38 @@ class TestProcessNormalFlow:
         assert mem0_add.call_count == result.bullets_added
 
 
+class TestProcessInferKwargCollision:
+    """Regression: a caller-supplied infer= must not collide with ACE's
+    hardcoded infer=False on the distilled-bullet add path."""
+
+    def test_caller_infer_does_not_collide(self) -> None:
+        """Memory is a mem0.Memory drop-in, so a caller may pass infer= which
+        Memory.add forwards via **kwargs. The distilled-bullet add must merge
+        infer=False into kwargs (not pass it positionally), so it neither raises
+        TypeError (which the per-bullet handler would swallow -> silent data
+        loss) nor lets the caller override ACE's mandatory infer=False."""
+        config = ReflectorConfig(min_score=10.0)
+        reflector = ReflectorEngine(config=config)
+        mem0_add = MagicMock()
+        pipeline = IngestPipeline(reflector=reflector, mem0_add_fn=mem0_add)
+
+        # infer=True arrives via **kwargs exactly as Memory.add would forward it.
+        result = pipeline.process(
+            _error_messages(),
+            metadata={"app": "test"},
+            user_id="u1",
+            infer=True,
+        )
+
+        # Bullets still persist (no collision -> no silent drop).
+        assert result.bullets_added >= 1
+        assert result.errors == []
+        # ACE's infer=False wins on every distilled add.
+        assert mem0_add.call_count >= 1
+        for c in mem0_add.call_args_list:
+            assert c.kwargs.get("infer") is False
+
+
 # ---------------------------------------------------------------------------
 # Test 2: No patterns detected — raw fallback
 # ---------------------------------------------------------------------------

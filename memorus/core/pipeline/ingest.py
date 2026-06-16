@@ -202,14 +202,16 @@ class IngestPipeline:
                     # infer=False so mem0 does not re-run its own LLM extraction
                     # (which would split/mangle one finished bullet into N
                     # memories, breaking the bullet<->row 1:1 model ACE relies on).
+                    # infer=False merged into kwargs (not passed positionally
+                    # alongside **kwargs) so a caller-supplied infer in kwargs
+                    # cannot collide; ACE's infer=False always wins.
                     self._mem0_add(
                         bullet.content,
                         user_id=user_id,
                         agent_id=agent_id,
                         run_id=run_id,
                         metadata=merged_meta,
-                        infer=False,
-                        **kwargs,
+                        **{**kwargs, "infer": False},
                     )
                 result.bullets_added += 1
             except Exception as e:
