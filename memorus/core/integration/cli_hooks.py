@@ -13,7 +13,6 @@ import asyncio
 import logging
 import platform
 import signal
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
@@ -258,13 +257,10 @@ class CLIPostActionHook(PostActionHook):
 
         Args:
             wait: Whether to wait for pending tasks.
-            timeout: Maximum seconds to wait (Python 3.9+).
+            timeout: Maximum seconds to wait.
         """
         try:
-            if sys.version_info >= (3, 9):
-                self._executor.shutdown(wait=wait, cancel_futures=not wait)
-            else:
-                self._executor.shutdown(wait=wait)
+            self._executor.shutdown(wait=wait, cancel_futures=not wait)
         except Exception:
             logger.warning("Executor shutdown error", exc_info=True)
 
